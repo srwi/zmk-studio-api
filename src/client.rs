@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 
 use crate::binding::{Behavior, BehaviorRole, role_from_display_name};
 use crate::framing::FrameDecoder;
-use crate::keycode::KeyCode;
+use crate::keycode::Keycode;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
@@ -306,15 +306,27 @@ impl<T: Read + Write> StudioClient<T> {
         };
 
         let behavior = match role {
-            BehaviorRole::KeyPress => Behavior::KeyPress(KeyCode::from_hid_usage(binding.param1)),
-            BehaviorRole::KeyToggle => Behavior::KeyToggle(KeyCode::from_hid_usage(binding.param1)),
-            BehaviorRole::LayerTap => Behavior::LayerTap {
-                layer_id: binding.param1,
-                tap: KeyCode::from_hid_usage(binding.param2),
+            BehaviorRole::KeyPress => match Keycode::from_hid_usage(binding.param1) {
+                Some(key) => Behavior::KeyPress(key),
+                None => Behavior::Raw(binding),
             },
-            BehaviorRole::ModTap => Behavior::ModTap {
-                hold: KeyCode::from_hid_usage(binding.param1),
-                tap: KeyCode::from_hid_usage(binding.param2),
+            BehaviorRole::KeyToggle => match Keycode::from_hid_usage(binding.param1) {
+                Some(key) => Behavior::KeyToggle(key),
+                None => Behavior::Raw(binding),
+            },
+            BehaviorRole::LayerTap => match Keycode::from_hid_usage(binding.param2) {
+                Some(tap) => Behavior::LayerTap {
+                    layer_id: binding.param1,
+                    tap,
+                },
+                None => Behavior::Raw(binding),
+            },
+            BehaviorRole::ModTap => match (
+                Keycode::from_hid_usage(binding.param1),
+                Keycode::from_hid_usage(binding.param2),
+            ) {
+                (Some(hold), Some(tap)) => Behavior::ModTap { hold, tap },
+                _ => Behavior::Raw(binding),
             },
             BehaviorRole::MomentaryLayer => Behavior::MomentaryLayer {
                 layer_id: binding.param1,

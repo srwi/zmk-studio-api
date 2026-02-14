@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use zmk_studio_rust_client::binding::Behavior;
 use zmk_studio_rust_client::client::{ClientError, StudioClient};
-use zmk_studio_rust_client::keycode::{self, KeyCode, KeyboardCode};
+use zmk_studio_rust_client::keycode::Keycode;
 use zmk_studio_rust_client::proto::zmk::meta::ErrorConditions;
 #[cfg(feature = "ble")]
 use zmk_studio_rust_client::transport::ble::{BleConnectOptions, BleTransport};
@@ -133,7 +133,7 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
                 }
             };
 
-            let key_name = keycode.to_zmk_name().unwrap_or("UNKNOWN");
+            let key_name = keycode.to_name().unwrap_or("UNKNOWN");
             println!("setting random tap key '{key_name}'");
             client.set_key_at(first_layer.id, 0, next_behavior)?;
 
@@ -161,34 +161,34 @@ fn print_usage() {
     println!("  cargo run --example studio_probe --features ble -- ble [NAME_SUBSTRING]");
 }
 
-fn random_letter_key() -> KeyCode {
-    const LETTERS: [u32; 26] = [
-        keycode::zmk_keys::A.raw(),
-        keycode::zmk_keys::B.raw(),
-        keycode::zmk_keys::C.raw(),
-        keycode::zmk_keys::D.raw(),
-        keycode::zmk_keys::E.raw(),
-        keycode::zmk_keys::F.raw(),
-        keycode::zmk_keys::G.raw(),
-        keycode::zmk_keys::H.raw(),
-        keycode::zmk_keys::I.raw(),
-        keycode::zmk_keys::J.raw(),
-        keycode::zmk_keys::K.raw(),
-        keycode::zmk_keys::L.raw(),
-        keycode::zmk_keys::M.raw(),
-        keycode::zmk_keys::N.raw(),
-        keycode::zmk_keys::O.raw(),
-        keycode::zmk_keys::P.raw(),
-        keycode::zmk_keys::Q.raw(),
-        keycode::zmk_keys::R.raw(),
-        keycode::zmk_keys::S.raw(),
-        keycode::zmk_keys::T.raw(),
-        keycode::zmk_keys::U.raw(),
-        keycode::zmk_keys::V.raw(),
-        keycode::zmk_keys::W.raw(),
-        keycode::zmk_keys::X.raw(),
-        keycode::zmk_keys::Y.raw(),
-        keycode::zmk_keys::Z.raw(),
+fn random_letter_key() -> Keycode {
+    const LETTERS: [Keycode; 26] = [
+        Keycode::A,
+        Keycode::B,
+        Keycode::C,
+        Keycode::D,
+        Keycode::E,
+        Keycode::F,
+        Keycode::G,
+        Keycode::H,
+        Keycode::I,
+        Keycode::J,
+        Keycode::K,
+        Keycode::L,
+        Keycode::M,
+        Keycode::N,
+        Keycode::O,
+        Keycode::P,
+        Keycode::Q,
+        Keycode::R,
+        Keycode::S,
+        Keycode::T,
+        Keycode::U,
+        Keycode::V,
+        Keycode::W,
+        Keycode::X,
+        Keycode::Y,
+        Keycode::Z,
     ];
 
     let now = SystemTime::now()
@@ -196,7 +196,7 @@ fn random_letter_key() -> KeyCode {
         .unwrap_or_default()
         .subsec_nanos();
     let idx = (now as usize) % LETTERS.len();
-    KeyCode::from_hid_usage(LETTERS[idx])
+    LETTERS[idx]
 }
 
 fn behavior_summary(behavior: &Behavior) -> String {
@@ -225,12 +225,9 @@ fn behavior_summary(behavior: &Behavior) -> String {
     }
 }
 
-fn keycode_summary(key: KeyCode) -> String {
-    match key {
-        KeyCode::Keyboard(KeyboardCode::Modifier(m)) => format!("Keyboard::{m:?}"),
-        KeyCode::Keyboard(KeyboardCode::UsageId(id)) => format!("Keyboard::UsageId({id})"),
-        KeyCode::Consumer(id) => format!("Consumer({id})"),
-        KeyCode::GenericDesktop(id) => format!("GenericDesktop({id})"),
-        KeyCode::Other(raw) => format!("Other(page={}, id={})", raw.page, raw.id),
+fn keycode_summary(key: Keycode) -> String {
+    if let Some(name) = key.to_name() {
+        return name.to_string();
     }
+    format!("0x{:08X}", key.to_hid_usage())
 }

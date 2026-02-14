@@ -1,6 +1,6 @@
 //! Typed binding domain model on top of raw ZMK behavior bindings.
 
-use crate::keycode::KeyCode;
+use crate::keycode::Keycode;
 use crate::proto::zmk;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -18,10 +18,10 @@ pub enum BehaviorRole {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Behavior {
-    KeyPress(KeyCode),
-    KeyToggle(KeyCode),
-    LayerTap { layer_id: u32, tap: KeyCode },
-    ModTap { hold: KeyCode, tap: KeyCode },
+    KeyPress(Keycode),
+    KeyToggle(Keycode),
+    LayerTap { layer_id: u32, tap: Keycode },
+    ModTap { hold: Keycode, tap: Keycode },
     MomentaryLayer { layer_id: u32 },
     ToggleLayer { layer_id: u32 },
     ToLayer { layer_id: u32 },

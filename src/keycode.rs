@@ -1,188 +1,590 @@
-//! Helpers for HID usage encoding and typed keycodes.
+use num_enum::TryFromPrimitive;
+use strum_macros::{AsRefStr, EnumString, IntoStaticStr};
 
-pub const HID_USAGE_PAGE_GENERIC_DESKTOP: u16 = 0x01;
-pub const HID_USAGE_PAGE_KEYBOARD: u16 = 0x07;
-pub const HID_USAGE_PAGE_CONSUMER: u16 = 0x0C;
-
-#[path = "keycode_zmk_generated.rs"]
-mod generated_keys;
-
-pub mod keycodes {
-    pub use super::generated_keys::*;
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive, AsRefStr, EnumString, IntoStaticStr,
+)]
+#[repr(u32)]
+#[allow(non_camel_case_types)]
+pub enum Keycode {
+    #[strum(serialize = "SYS_PWR")]
+    SYSTEM_POWER = 0x00010081,
+    #[strum(serialize = "SYS_SLEEP")]
+    SYSTEM_SLEEP = 0x00010082,
+    #[strum(serialize = "SYS_WAKE")]
+    SYSTEM_WAKE_UP = 0x00010083,
+    A = 0x00070004,
+    B = 0x00070005,
+    C = 0x00070006,
+    D = 0x00070007,
+    E = 0x00070008,
+    F = 0x00070009,
+    G = 0x0007000A,
+    H = 0x0007000B,
+    I = 0x0007000C,
+    J = 0x0007000D,
+    K = 0x0007000E,
+    L = 0x0007000F,
+    M = 0x00070010,
+    N = 0x00070011,
+    O = 0x00070012,
+    P = 0x00070013,
+    Q = 0x00070014,
+    R = 0x00070015,
+    S = 0x00070016,
+    T = 0x00070017,
+    U = 0x00070018,
+    V = 0x00070019,
+    W = 0x0007001A,
+    X = 0x0007001B,
+    Y = 0x0007001C,
+    Z = 0x0007001D,
+    #[strum(serialize = "N1")]
+    #[strum(serialize = "NUM_1")]
+    NUMBER_1 = 0x0007001E,
+    #[strum(serialize = "N2")]
+    #[strum(serialize = "NUM_2")]
+    NUMBER_2 = 0x0007001F,
+    #[strum(serialize = "N3")]
+    #[strum(serialize = "NUM_3")]
+    NUMBER_3 = 0x00070020,
+    #[strum(serialize = "N4")]
+    #[strum(serialize = "NUM_4")]
+    NUMBER_4 = 0x00070021,
+    #[strum(serialize = "N5")]
+    #[strum(serialize = "NUM_5")]
+    NUMBER_5 = 0x00070022,
+    #[strum(serialize = "N6")]
+    #[strum(serialize = "NUM_6")]
+    NUMBER_6 = 0x00070023,
+    #[strum(serialize = "N7")]
+    #[strum(serialize = "NUM_7")]
+    NUMBER_7 = 0x00070024,
+    #[strum(serialize = "N8")]
+    #[strum(serialize = "NUM_8")]
+    NUMBER_8 = 0x00070025,
+    #[strum(serialize = "N9")]
+    #[strum(serialize = "NUM_9")]
+    NUMBER_9 = 0x00070026,
+    #[strum(serialize = "N0")]
+    #[strum(serialize = "NUM_0")]
+    NUMBER_0 = 0x00070027,
+    #[strum(serialize = "ENTER")]
+    #[strum(serialize = "RET")]
+    RETURN = 0x00070028,
+    #[strum(serialize = "ESC")]
+    ESCAPE = 0x00070029,
+    #[strum(serialize = "BKSP")]
+    #[strum(serialize = "BSPC")]
+    BACKSPACE = 0x0007002A,
+    TAB = 0x0007002B,
+    #[strum(serialize = "SPC")]
+    SPACE = 0x0007002C,
+    MINUS = 0x0007002D,
+    #[strum(serialize = "EQL")]
+    EQUAL = 0x0007002E,
+    #[strum(serialize = "BSLH")]
+    BACKSLASH = 0x00070031,
+    #[strum(serialize = "NUHS")]
+    NON_US_HASH = 0x00070032,
+    #[strum(serialize = "SCLN")]
+    #[strum(serialize = "SEMI")]
+    SEMICOLON = 0x00070033,
+    #[strum(serialize = "APOS")]
+    #[strum(serialize = "APOSTROPHE")]
+    #[strum(serialize = "QUOT")]
+    #[strum(serialize = "SQT")]
+    SINGLE_QUOTE = 0x00070034,
+    #[strum(serialize = "GRAV")]
+    GRAVE = 0x00070035,
+    #[strum(serialize = "CMMA")]
+    COMMA = 0x00070036,
+    #[strum(serialize = "DOT")]
+    PERIOD = 0x00070037,
+    #[strum(serialize = "FSLH")]
+    SLASH = 0x00070038,
+    #[strum(serialize = "CAPS")]
+    #[strum(serialize = "CLCK")]
+    CAPSLOCK = 0x00070039,
+    F1 = 0x0007003A,
+    F2 = 0x0007003B,
+    F3 = 0x0007003C,
+    F4 = 0x0007003D,
+    F5 = 0x0007003E,
+    F6 = 0x0007003F,
+    F7 = 0x00070040,
+    F8 = 0x00070041,
+    F9 = 0x00070042,
+    F10 = 0x00070043,
+    F11 = 0x00070044,
+    F12 = 0x00070045,
+    #[strum(serialize = "PRSC")]
+    #[strum(serialize = "PSCRN")]
+    PRINTSCREEN = 0x00070046,
+    #[strum(serialize = "SCLK")]
+    #[strum(serialize = "SLCK")]
+    SCROLLLOCK = 0x00070047,
+    #[strum(serialize = "PAUS")]
+    PAUSE_BREAK = 0x00070048,
+    #[strum(serialize = "INS")]
+    INSERT = 0x00070049,
+    HOME = 0x0007004A,
+    #[strum(serialize = "PG_UP")]
+    #[strum(serialize = "PGUP")]
+    PAGE_UP = 0x0007004B,
+    #[strum(serialize = "DEL")]
+    DELETE = 0x0007004C,
+    END = 0x0007004D,
+    #[strum(serialize = "PG_DN")]
+    #[strum(serialize = "PGDN")]
+    PAGE_DOWN = 0x0007004E,
+    #[strum(serialize = "RARW")]
+    #[strum(serialize = "RIGHT")]
+    RIGHT_ARROW = 0x0007004F,
+    #[strum(serialize = "LARW")]
+    #[strum(serialize = "LEFT")]
+    LEFT_ARROW = 0x00070050,
+    #[strum(serialize = "DARW")]
+    #[strum(serialize = "DOWN")]
+    DOWN_ARROW = 0x00070051,
+    #[strum(serialize = "UARW")]
+    #[strum(serialize = "UP")]
+    UP_ARROW = 0x00070052,
+    #[strum(serialize = "KP_NLCK")]
+    #[strum(serialize = "KP_NUM")]
+    KP_NUMLOCK = 0x00070053,
+    #[strum(serialize = "KDIV")]
+    #[strum(serialize = "KP_SLASH")]
+    KP_DIVIDE = 0x00070054,
+    #[strum(serialize = "KMLT")]
+    #[strum(serialize = "KP_MULTIPLY")]
+    KP_ASTERISK = 0x00070055,
+    #[strum(serialize = "KMIN")]
+    #[strum(serialize = "KP_MINUS")]
+    KP_SUBTRACT = 0x00070056,
+    #[strum(serialize = "KPLS")]
+    KP_PLUS = 0x00070057,
+    KP_ENTER = 0x00070058,
+    #[strum(serialize = "KP_N1")]
+    KP_NUMBER_1 = 0x00070059,
+    #[strum(serialize = "KP_N2")]
+    KP_NUMBER_2 = 0x0007005A,
+    #[strum(serialize = "KP_N3")]
+    KP_NUMBER_3 = 0x0007005B,
+    #[strum(serialize = "KP_N4")]
+    KP_NUMBER_4 = 0x0007005C,
+    #[strum(serialize = "KP_N5")]
+    KP_NUMBER_5 = 0x0007005D,
+    #[strum(serialize = "KP_N6")]
+    KP_NUMBER_6 = 0x0007005E,
+    #[strum(serialize = "KP_N7")]
+    KP_NUMBER_7 = 0x0007005F,
+    #[strum(serialize = "KP_N8")]
+    KP_NUMBER_8 = 0x00070060,
+    #[strum(serialize = "KP_N9")]
+    KP_NUMBER_9 = 0x00070061,
+    #[strum(serialize = "KP_N0")]
+    KP_NUMBER_0 = 0x00070062,
+    KP_DOT = 0x00070063,
+    #[strum(serialize = "GUI")]
+    #[strum(serialize = "K_APP")]
+    #[strum(serialize = "K_APPLICATION")]
+    #[strum(serialize = "K_CMENU")]
+    K_CONTEXT_MENU = 0x00070065,
+    #[strum(serialize = "K_PWR")]
+    K_POWER = 0x00070066,
+    KP_EQUAL = 0x00070067,
+    F13 = 0x00070068,
+    F14 = 0x00070069,
+    F15 = 0x0007006A,
+    F16 = 0x0007006B,
+    F17 = 0x0007006C,
+    F18 = 0x0007006D,
+    F19 = 0x0007006E,
+    F20 = 0x0007006F,
+    F21 = 0x00070070,
+    F22 = 0x00070071,
+    F23 = 0x00070072,
+    F24 = 0x00070073,
+    #[strum(serialize = "K_EXEC")]
+    K_EXECUTE = 0x00070074,
+    K_HELP = 0x00070075,
+    K_MENU = 0x00070076,
+    K_SELECT = 0x00070077,
+    K_STOP = 0x00070078,
+    #[strum(serialize = "K_REDO")]
+    K_AGAIN = 0x00070079,
+    #[strum(serialize = "UNDO")]
+    K_UNDO = 0x0007007A,
+    #[strum(serialize = "CUT")]
+    K_CUT = 0x0007007B,
+    #[strum(serialize = "COPY")]
+    K_COPY = 0x0007007C,
+    #[strum(serialize = "PSTE")]
+    K_PASTE = 0x0007007D,
+    K_FIND = 0x0007007E,
+    K_MUTE = 0x0007007F,
+    #[strum(serialize = "K_VOL_UP")]
+    #[strum(serialize = "VOLU")]
+    K_VOLUME_UP = 0x00070080,
+    #[strum(serialize = "K_VOL_DN")]
+    #[strum(serialize = "VOLD")]
+    K_VOLUME_DOWN = 0x00070081,
+    #[strum(serialize = "LCAPS")]
+    LOCKING_CAPS = 0x00070082,
+    #[strum(serialize = "LNLCK")]
+    LOCKING_NUM = 0x00070083,
+    #[strum(serialize = "LSLCK")]
+    LOCKING_SCROLL = 0x00070084,
+    KP_COMMA = 0x00070085,
+    KP_EQUAL_AS400 = 0x00070086,
+    #[strum(serialize = "INT_RO")]
+    #[strum(serialize = "INT1")]
+    INTERNATIONAL_1 = 0x00070087,
+    #[strum(serialize = "INT_KANA")]
+    #[strum(serialize = "INT2")]
+    #[strum(serialize = "INTERNATIONAL_2")]
+    INT_KATAKANAHIRAGANA = 0x00070088,
+    #[strum(serialize = "INT_YEN")]
+    #[strum(serialize = "INT3")]
+    INTERNATIONAL_3 = 0x00070089,
+    #[strum(serialize = "INT_HENKAN")]
+    #[strum(serialize = "INT4")]
+    INTERNATIONAL_4 = 0x0007008A,
+    #[strum(serialize = "INT_MUHENKAN")]
+    #[strum(serialize = "INT5")]
+    INTERNATIONAL_5 = 0x0007008B,
+    #[strum(serialize = "INT_KPJPCOMMA")]
+    #[strum(serialize = "INT6")]
+    INTERNATIONAL_6 = 0x0007008C,
+    #[strum(serialize = "INT7")]
+    INTERNATIONAL_7 = 0x0007008D,
+    #[strum(serialize = "INT8")]
+    INTERNATIONAL_8 = 0x0007008E,
+    #[strum(serialize = "INT9")]
+    INTERNATIONAL_9 = 0x0007008F,
+    #[strum(serialize = "LANG1")]
+    #[strum(serialize = "LANGUAGE_1")]
+    LANG_HANGEUL = 0x00070090,
+    #[strum(serialize = "LANG2")]
+    #[strum(serialize = "LANGUAGE_2")]
+    LANG_HANJA = 0x00070091,
+    #[strum(serialize = "LANG3")]
+    #[strum(serialize = "LANGUAGE_3")]
+    LANG_KATAKANA = 0x00070092,
+    #[strum(serialize = "LANG4")]
+    #[strum(serialize = "LANGUAGE_4")]
+    LANG_HIRAGANA = 0x00070093,
+    #[strum(serialize = "LANG5")]
+    #[strum(serialize = "LANGUAGE_5")]
+    LANG_ZENKAKUHANKAKU = 0x00070094,
+    #[strum(serialize = "LANG6")]
+    LANGUAGE_6 = 0x00070095,
+    #[strum(serialize = "LANG7")]
+    LANGUAGE_7 = 0x00070096,
+    #[strum(serialize = "LANG8")]
+    LANGUAGE_8 = 0x00070097,
+    #[strum(serialize = "LANG9")]
+    LANGUAGE_9 = 0x00070098,
+    ALT_ERASE = 0x00070099,
+    #[strum(serialize = "SYSREQ")]
+    ATTENTION = 0x0007009A,
+    K_CANCEL = 0x0007009B,
+    CLEAR = 0x0007009C,
+    PRIOR = 0x0007009D,
+    #[strum(serialize = "RET2")]
+    RETURN2 = 0x0007009E,
+    SEPARATOR = 0x0007009F,
+    OUT = 0x000700A0,
+    OPER = 0x000700A1,
+    CLEAR_AGAIN = 0x000700A2,
+    CRSEL = 0x000700A3,
+    EXSEL = 0x000700A4,
+    #[strum(serialize = "KP_LPAR")]
+    KP_LEFT_PARENTHESIS = 0x000700B6,
+    #[strum(serialize = "KP_RPAR")]
+    KP_RIGHT_PARENTHESIS = 0x000700B7,
+    KP_CLEAR = 0x000700D8,
+    #[strum(serialize = "LCTL")]
+    #[strum(serialize = "LCTRL")]
+    LEFT_CONTROL = 0x000700E0,
+    #[strum(serialize = "LSFT")]
+    #[strum(serialize = "LSHFT")]
+    #[strum(serialize = "LSHIFT")]
+    LEFT_SHIFT = 0x000700E1,
+    #[strum(serialize = "LALT")]
+    LEFT_ALT = 0x000700E2,
+    #[strum(serialize = "LCMD")]
+    #[strum(serialize = "LEFT_GUI")]
+    #[strum(serialize = "LEFT_META")]
+    #[strum(serialize = "LEFT_WIN")]
+    #[strum(serialize = "LGUI")]
+    #[strum(serialize = "LMETA")]
+    #[strum(serialize = "LWIN")]
+    LEFT_COMMAND = 0x000700E3,
+    #[strum(serialize = "RCTL")]
+    #[strum(serialize = "RCTRL")]
+    RIGHT_CONTROL = 0x000700E4,
+    #[strum(serialize = "RSFT")]
+    #[strum(serialize = "RSHFT")]
+    #[strum(serialize = "RSHIFT")]
+    RIGHT_SHIFT = 0x000700E5,
+    #[strum(serialize = "RALT")]
+    RIGHT_ALT = 0x000700E6,
+    #[strum(serialize = "RCMD")]
+    #[strum(serialize = "RGUI")]
+    #[strum(serialize = "RIGHT_GUI")]
+    #[strum(serialize = "RIGHT_META")]
+    #[strum(serialize = "RIGHT_WIN")]
+    #[strum(serialize = "RMETA")]
+    #[strum(serialize = "RWIN")]
+    RIGHT_COMMAND = 0x000700E7,
+    #[strum(serialize = "K_PP")]
+    K_PLAY_PAUSE = 0x000700E8,
+    K_STOP2 = 0x000700E9,
+    #[strum(serialize = "K_PREV")]
+    K_PREVIOUS = 0x000700EA,
+    K_NEXT = 0x000700EB,
+    K_EJECT = 0x000700EC,
+    #[strum(serialize = "K_VOL_UP2")]
+    K_VOLUME_UP2 = 0x000700ED,
+    #[strum(serialize = "K_VOL_DN2")]
+    K_VOLUME_DOWN2 = 0x000700EE,
+    K_MUTE2 = 0x000700EF,
+    K_WWW = 0x000700F0,
+    K_BACK = 0x000700F1,
+    K_FORWARD = 0x000700F2,
+    K_STOP3 = 0x000700F3,
+    K_FIND2 = 0x000700F4,
+    K_SCROLL_UP = 0x000700F5,
+    K_SCROLL_DOWN = 0x000700F6,
+    K_EDIT = 0x000700F7,
+    K_SLEEP = 0x000700F8,
+    #[strum(serialize = "K_COFFEE")]
+    #[strum(serialize = "K_LOCK")]
+    K_SCREENSAVER = 0x000700F9,
+    K_REFRESH = 0x000700FA,
+    #[strum(serialize = "K_CALC")]
+    K_CALCULATOR = 0x000700FB,
+    #[strum(serialize = "C_PWR")]
+    C_POWER = 0x000C0030,
+    C_RESET = 0x000C0031,
+    C_SLEEP = 0x000C0032,
+    C_SLEEP_MODE = 0x000C0034,
+    C_MENU = 0x000C0040,
+    #[strum(serialize = "C_MENU_PICK")]
+    C_MENU_SELECT = 0x000C0041,
+    C_MENU_UP = 0x000C0042,
+    C_MENU_DOWN = 0x000C0043,
+    C_MENU_LEFT = 0x000C0044,
+    C_MENU_RIGHT = 0x000C0045,
+    #[strum(serialize = "C_MENU_ESC")]
+    C_MENU_ESCAPE = 0x000C0046,
+    #[strum(serialize = "C_MENU_INC")]
+    C_MENU_INCREASE = 0x000C0047,
+    #[strum(serialize = "C_MENU_DEC")]
+    C_MENU_DECREASE = 0x000C0048,
+    C_DATA_ON_SCREEN = 0x000C0060,
+    #[strum(serialize = "C_CAPTIONS")]
+    C_SUBTITLES = 0x000C0061,
+    C_SNAPSHOT = 0x000C0065,
+    C_PIP = 0x000C0067,
+    #[strum(serialize = "C_RED")]
+    C_RED_BUTTON = 0x000C0069,
+    #[strum(serialize = "C_GREEN")]
+    C_GREEN_BUTTON = 0x000C006A,
+    #[strum(serialize = "C_BLUE")]
+    C_BLUE_BUTTON = 0x000C006B,
+    #[strum(serialize = "C_YELLOW")]
+    C_YELLOW_BUTTON = 0x000C006C,
+    C_ASPECT = 0x000C006D,
+    #[strum(serialize = "C_MODE_STEP")]
+    C_MEDIA_STEP = 0x000C0082,
+    #[strum(serialize = "C_CHAN_LAST")]
+    C_RECALL_LAST = 0x000C0083,
+    C_MEDIA_TV = 0x000C0089,
+    C_MEDIA_WWW = 0x000C008A,
+    C_MEDIA_DVD = 0x000C008B,
+    C_MEDIA_PHONE = 0x000C008C,
+    C_MEDIA_GAMES = 0x000C008F,
+    C_MEDIA_CD = 0x000C0091,
+    C_MEDIA_VCR = 0x000C0092,
+    C_MEDIA_TUNER = 0x000C0093,
+    C_QUIT = 0x000C0094,
+    C_HELP = 0x000C0095,
+    C_MEDIA_TAPE = 0x000C0096,
+    C_MEDIA_CABLE = 0x000C0097,
+    C_MEDIA_HOME = 0x000C009A,
+    #[strum(serialize = "C_CHAN_INC")]
+    C_CHANNEL_INC = 0x000C009C,
+    #[strum(serialize = "C_CHAN_DEC")]
+    C_CHANNEL_DEC = 0x000C009D,
+    C_MEDIA_VCR_PLUS = 0x000C00A0,
+    C_PLAY = 0x000C00B0,
+    C_PAUSE = 0x000C00B1,
+    #[strum(serialize = "C_REC")]
+    C_RECORD = 0x000C00B2,
+    #[strum(serialize = "C_FF")]
+    C_FAST_FORWARD = 0x000C00B3,
+    #[strum(serialize = "C_RW")]
+    C_REWIND = 0x000C00B4,
+    #[strum(serialize = "M_NEXT")]
+    C_NEXT = 0x000C00B5,
+    #[strum(serialize = "C_PREV")]
+    #[strum(serialize = "M_PREV")]
+    C_PREVIOUS = 0x000C00B6,
+    #[strum(serialize = "M_STOP")]
+    C_STOP = 0x000C00B7,
+    #[strum(serialize = "M_EJCT")]
+    C_EJECT = 0x000C00B8,
+    #[strum(serialize = "C_SHUFFLE")]
+    C_RANDOM_PLAY = 0x000C00B9,
+    C_REPEAT = 0x000C00BC,
+    #[strum(serialize = "C_SLOW2")]
+    C_SLOW_TRACKING = 0x000C00BF,
+    C_STOP_EJECT = 0x000C00CC,
+    #[strum(serialize = "C_PP")]
+    #[strum(serialize = "M_PLAY")]
+    C_PLAY_PAUSE = 0x000C00CD,
+    C_VOICE_COMMAND = 0x000C00CF,
+    #[strum(serialize = "M_MUTE")]
+    C_MUTE = 0x000C00E2,
+    C_BASS_BOOST = 0x000C00E5,
+    #[strum(serialize = "C_VOL_UP")]
+    #[strum(serialize = "M_VOLU")]
+    C_VOLUME_UP = 0x000C00E9,
+    #[strum(serialize = "C_VOL_DN")]
+    #[strum(serialize = "M_VOLD")]
+    C_VOLUME_DOWN = 0x000C00EA,
+    C_SLOW = 0x000C00F5,
+    C_AL_WORD = 0x000C0184,
+    C_AL_TEXT_EDITOR = 0x000C0185,
+    #[strum(serialize = "C_AL_SHEET")]
+    C_AL_SPREADSHEET = 0x000C0186,
+    #[strum(serialize = "C_AL_DB")]
+    C_AL_DATABASE = 0x000C0189,
+    #[strum(serialize = "C_AL_MAIL")]
+    C_AL_EMAIL = 0x000C018A,
+    C_AL_NEWS = 0x000C018B,
+    C_AL_VOICEMAIL = 0x000C018C,
+    #[strum(serialize = "C_AL_CAL")]
+    C_AL_CALENDAR = 0x000C018E,
+    C_AL_JOURNAL = 0x000C0190,
+    C_AL_FINANCE = 0x000C0191,
+    #[strum(serialize = "C_AL_CALC")]
+    C_AL_CALCULATOR = 0x000C0192,
+    C_AL_WWW = 0x000C0196,
+    #[strum(serialize = "C_AL_CHAT")]
+    C_AL_NETWORK_CHAT = 0x000C0199,
+    C_AL_LOGOFF = 0x000C019C,
+    C_AL_CONTROL_PANEL = 0x000C019F,
+    C_AL_HELP = 0x000C01A6,
+    #[strum(serialize = "C_AL_DOCS")]
+    C_AL_DOCUMENTS = 0x000C01A7,
+    #[strum(serialize = "C_AL_SPELL")]
+    C_AL_SPELLCHECK = 0x000C01AB,
+    C_AL_SCREEN_SAVER = 0x000C01B1,
+    #[strum(serialize = "C_AL_FILES")]
+    C_AL_FILE_BROWSER = 0x000C01B4,
+    #[strum(serialize = "C_AL_IMAGES")]
+    C_AL_IMAGE_BROWSER = 0x000C01B6,
+    #[strum(serialize = "C_AL_AUDIO")]
+    #[strum(serialize = "C_AL_MUSIC")]
+    C_AL_AUDIO_BROWSER = 0x000C01B7,
+    #[strum(serialize = "C_AL_MOVIES")]
+    C_AL_MOVIE_BROWSER = 0x000C01B8,
+    C_AC_NEW = 0x000C0201,
+    C_AC_OPEN = 0x000C0202,
+    C_AC_CLOSE = 0x000C0203,
+    C_AC_EXIT = 0x000C0204,
+    C_AC_SAVE = 0x000C0207,
+    C_AC_PRINT = 0x000C0208,
+    #[strum(serialize = "C_AC_PROPS")]
+    C_AC_PROPERTIES = 0x000C0209,
+    C_AC_UNDO = 0x000C021A,
+    C_AC_COPY = 0x000C021B,
+    C_AC_CUT = 0x000C021C,
+    C_AC_PASTE = 0x000C021D,
+    C_AC_FIND = 0x000C021F,
+    C_AC_SEARCH = 0x000C0221,
+    C_AC_GOTO = 0x000C0222,
+    C_AC_HOME = 0x000C0223,
+    C_AC_BACK = 0x000C0224,
+    C_AC_FORWARD = 0x000C0225,
+    C_AC_STOP = 0x000C0226,
+    C_AC_REFRESH = 0x000C0227,
+    #[strum(serialize = "C_AC_BOOKMARKS")]
+    #[strum(serialize = "C_AC_FAVORITES")]
+    C_AC_FAVOURITES = 0x000C022A,
+    C_AC_ZOOM_IN = 0x000C022D,
+    C_AC_ZOOM_OUT = 0x000C022E,
+    C_AC_ZOOM = 0x000C022F,
+    C_AC_VIEW_TOGGLE = 0x000C0232,
+    C_AC_SCROLL_UP = 0x000C0233,
+    C_AC_SCROLL_DOWN = 0x000C0234,
+    C_AC_EDIT = 0x000C023D,
+    C_AC_CANCEL = 0x000C025F,
+    #[strum(serialize = "C_AC_INS")]
+    C_AC_INSERT = 0x000C0269,
+    C_AC_DEL = 0x000C026A,
+    C_AC_REDO = 0x000C0279,
+    C_AC_REPLY = 0x000C0289,
+    C_AC_FORWARD_MAIL = 0x000C028B,
+    C_AC_SEND = 0x000C028C,
+    #[strum(serialize = "GLOBE")]
+    C_AC_NEXT_KEYBOARD_LAYOUT_SELECT = 0x000C029D,
+    #[strum(serialize = "BANG")]
+    #[strum(serialize = "EXCL")]
+    EXCLAMATION = 0x0207001E,
+    #[strum(serialize = "AT")]
+    #[strum(serialize = "ATSN")]
+    AT_SIGN = 0x0207001F,
+    #[strum(serialize = "HASH")]
+    POUND = 0x02070020,
+    #[strum(serialize = "DLLR")]
+    DOLLAR = 0x02070021,
+    #[strum(serialize = "PRCNT")]
+    #[strum(serialize = "PRCT")]
+    PERCENT = 0x02070022,
+    #[strum(serialize = "CRRT")]
+    CARET = 0x02070023,
+    #[strum(serialize = "AMPS")]
+    AMPERSAND = 0x02070024,
+    #[strum(serialize = "ASTRK")]
+    #[strum(serialize = "STAR")]
+    ASTERISK = 0x02070025,
+    #[strum(serialize = "UNDER")]
+    UNDERSCORE = 0x0207002D,
+    PLUS = 0x0207002E,
+    PIPE = 0x02070031,
+    TILDE2 = 0x02070032,
+    #[strum(serialize = "COLN")]
+    COLON = 0x02070033,
+    #[strum(serialize = "TILD")]
+    TILDE = 0x02070035,
+    #[strum(serialize = "LABT")]
+    #[strum(serialize = "LT")]
+    LESS_THAN = 0x02070036,
+    #[strum(serialize = "QMARK")]
+    QUESTION = 0x02070038,
+    CLEAR2 = 0x02070053,
+    PIPE2 = 0x02070064,
 }
 
-pub use keycodes as zmk_keys;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct HidUsage {
-    pub page: u16,
-    pub id: u16,
-}
-
-impl HidUsage {
-    pub fn encode(self) -> u32 {
-        ((self.page as u32) << 16) | (self.id as u32)
+impl Keycode {
+    pub const fn to_hid_usage(self) -> u32 {
+        self as u32
     }
 
-    pub fn decode(encoded: u32) -> Self {
-        Self {
-            page: ((encoded >> 16) & 0xFF) as u16,
-            id: (encoded & 0xFFFF) as u16,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum KeyCode {
-    Keyboard(KeyboardCode),
-    Consumer(u16),
-    GenericDesktop(u16),
-    Other(HidUsage),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ZmkKeycode(u32);
-
-impl ZmkKeycode {
-    pub const fn from_raw(raw: u32) -> Self {
-        Self(raw)
-    }
-
-    pub const fn raw(self) -> u32 {
-        self.0
+    pub fn from_hid_usage(encoded: u32) -> Option<Self> {
+        Self::try_from(encoded).ok()
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
-        zmk_keys::Keycode::from_name(name).map(|k| Self(k.raw()))
+        name.parse().ok()
     }
 
-    pub fn name(self) -> Option<&'static str> {
-        zmk_keys::Keycode::try_from(self.0)
-            .ok()
-            .map(<&'static str>::from)
-    }
-
-    pub fn to_key_code(self) -> KeyCode {
-        KeyCode::from_hid_usage(self.0)
-    }
-}
-
-impl From<ZmkKeycode> for KeyCode {
-    fn from(value: ZmkKeycode) -> Self {
-        value.to_key_code()
-    }
-}
-
-impl From<KeyCode> for ZmkKeycode {
-    fn from(value: KeyCode) -> Self {
-        Self(value.to_hid_usage())
-    }
-}
-
-pub fn is_keyboard_usage(encoded: u32) -> bool {
-    HidUsage::decode(encoded).page == HID_USAGE_PAGE_KEYBOARD
-}
-
-impl KeyCode {
-    pub fn to_hid_usage(self) -> u32 {
-        match self {
-            Self::Keyboard(kbd) => HidUsage {
-                page: HID_USAGE_PAGE_KEYBOARD,
-                id: kbd.usage_id(),
-            }
-            .encode(),
-            Self::Consumer(id) => HidUsage {
-                page: HID_USAGE_PAGE_CONSUMER,
-                id,
-            }
-            .encode(),
-            Self::GenericDesktop(id) => HidUsage {
-                page: HID_USAGE_PAGE_GENERIC_DESKTOP,
-                id,
-            }
-            .encode(),
-            Self::Other(raw) => raw.encode(),
-        }
-    }
-
-    pub fn from_hid_usage(encoded: u32) -> Self {
-        let raw = HidUsage::decode(encoded);
-        match raw.page {
-            HID_USAGE_PAGE_KEYBOARD => Self::Keyboard(KeyboardCode::from_usage_id(raw.id)),
-            HID_USAGE_PAGE_CONSUMER => Self::Consumer(raw.id),
-            HID_USAGE_PAGE_GENERIC_DESKTOP => Self::GenericDesktop(raw.id),
-            _ => Self::Other(raw),
-        }
-    }
-
-    pub fn from_zmk_name(name: &str) -> Option<Self> {
-        ZmkKeycode::from_name(name).map(|k| Self::from_hid_usage(k.raw()))
-    }
-
-    pub fn to_zmk_name(self) -> Option<&'static str> {
-        ZmkKeycode::from(self).name()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum KeyboardCode {
-    Modifier(ModifierKey),
-    UsageId(u16),
-}
-
-impl KeyboardCode {
-    pub fn usage_id(self) -> u16 {
-        match self {
-            Self::Modifier(m) => m.usage_id(),
-            Self::UsageId(id) => id,
-        }
-    }
-
-    pub fn from_usage_id(id: u16) -> Self {
-        if let Some(modifier) = ModifierKey::from_usage_id(id) {
-            return Self::Modifier(modifier);
-        }
-        Self::UsageId(id)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ModifierKey {
-    LeftControl,
-    LeftShift,
-    LeftAlt,
-    LeftGui,
-    RightControl,
-    RightShift,
-    RightAlt,
-    RightGui,
-}
-
-impl ModifierKey {
-    pub fn usage_id(self) -> u16 {
-        match self {
-            Self::LeftControl => 224,
-            Self::LeftShift => 225,
-            Self::LeftAlt => 226,
-            Self::LeftGui => 227,
-            Self::RightControl => 228,
-            Self::RightShift => 229,
-            Self::RightAlt => 230,
-            Self::RightGui => 231,
-        }
-    }
-
-    pub fn from_usage_id(id: u16) -> Option<Self> {
-        match id {
-            224 => Some(Self::LeftControl),
-            225 => Some(Self::LeftShift),
-            226 => Some(Self::LeftAlt),
-            227 => Some(Self::LeftGui),
-            228 => Some(Self::RightControl),
-            229 => Some(Self::RightShift),
-            230 => Some(Self::RightAlt),
-            231 => Some(Self::RightGui),
-            _ => None,
-        }
+    pub fn to_name(self) -> Option<&'static str> {
+        Some(<&'static str>::from(self))
     }
 }
