@@ -32,8 +32,8 @@ pub enum ClientError {
     RestoreLayerFailed(zmk::keymap::RestoreLayerErrorCode),
     SetLayerPropsFailed(zmk::keymap::SetLayerPropsResponse),
     InvalidLayerOrPosition { layer_id: u32, key_position: i32 },
-    BindingNotKeyboardCompatible { layer_id: u32, key_position: i32 },
     MissingBehaviorRole(&'static str),
+    BehaviorIdOutOfRange { behavior_id: u32 },
 }
 
 impl std::fmt::Display for ClientError {
@@ -88,15 +88,11 @@ impl std::fmt::Display for ClientError {
                 f,
                 "Invalid layer/position: layer_id={layer_id}, key_position={key_position}"
             ),
-            Self::BindingNotKeyboardCompatible {
-                layer_id,
-                key_position,
-            } => write!(
-                f,
-                "Binding at layer_id={layer_id}, key_position={key_position} is not keyboard-key compatible"
-            ),
             Self::MissingBehaviorRole(role) => {
                 write!(f, "Missing required behavior role in firmware: {role}")
+            }
+            Self::BehaviorIdOutOfRange { behavior_id } => {
+                write!(f, "Behavior ID is out of i32 range: {behavior_id}")
             }
         }
     }
@@ -131,8 +127,8 @@ pub struct StudioClient<T> {
     read_buffer: Vec<u8>,
     responses: VecDeque<studio::Response>,
     notifications: VecDeque<studio::Notification>,
-    behavior_role_by_id: HashMap<i32, BehaviorRole>,
-    behavior_id_by_role: HashMap<BehaviorRole, i32>,
+    behavior_role_by_id: HashMap<u32, BehaviorRole>,
+    behavior_id_by_role: HashMap<BehaviorRole, u32>,
 }
 
 impl<T: Read + Write> StudioClient<T> {
@@ -294,7 +290,10 @@ impl<T: Read + Write> StudioClient<T> {
             },
         )?;
 
-        let Some(role) = self.behavior_role_by_id.get(&binding.behavior_id).copied() else {
+        let Ok(binding_behavior_id) = u32::try_from(binding.behavior_id) else {
+            return Ok(Behavior::Raw(binding));
+        };
+        let Some(role) = self.behavior_role_by_id.get(&binding_behavior_id).copied() else {
             return Ok(Behavior::Raw(binding));
         };
 
@@ -379,6 +378,9 @@ impl<T: Read + Write> StudioClient<T> {
     }
 
     /// Typed keymap API: set a behavior at a specific layer/key position.
+    ///
+    /// This updates the device's working keymap state only.
+    /// Persist with [`StudioClient::save_changes`] or revert with [`StudioClient::discard_changes`].
     pub fn set_key_at(
         &mut self,
         layer_id: u32,
@@ -548,6 +550,9 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Saves pending keymap/layout mutations made by methods like [`StudioClient::set_key_at`].
+    ///
+    /// After this succeeds, changes are persisted on the device.
     pub fn save_changes(&mut self) -> Result<(), ClientError> {
         let response = self.call_keymap(zmk::keymap::request::RequestType::SaveChanges(true))?;
         match response.response_type {
@@ -568,6 +573,9 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Discards pending keymap/layout mutations made since the last save.
+    ///
+    /// Returns `true` if there were pending changes and they were discarded.
     pub fn discard_changes(&mut self) -> Result<bool, ClientError> {
         let response = self.call_keymap(zmk::keymap::request::RequestType::DiscardChanges(true))?;
         match response.response_type {
@@ -736,10 +744,12 @@ impl<T: Read + Write> StudioClient<T> {
         role: BehaviorRole,
         display_name: &'static str,
     ) -> Result<i32, ClientError> {
-        self.behavior_id_by_role
+        let behavior_id = self
+            .behavior_id_by_role
             .get(&role)
             .copied()
-            .ok_or(ClientError::MissingBehaviorRole(display_name))
+            .ok_or(ClientError::MissingBehaviorRole(display_name))?;
+        i32::try_from(behavior_id).map_err(|_| ClientError::BehaviorIdOutOfRange { behavior_id })
     }
 
     fn ensure_behavior_catalog(&mut self) -> Result<(), ClientError> {
@@ -752,9 +762,8 @@ impl<T: Read + Write> StudioClient<T> {
             let details = self.get_behavior_details(id)?;
             let role = role_from_display_name(&details.display_name);
             if let Some(role) = role {
-                let id_i32 = id as i32;
-                self.behavior_role_by_id.insert(id_i32, role);
-                self.behavior_id_by_role.entry(role).or_insert(id_i32);
+                self.behavior_role_by_id.insert(id, role);
+                self.behavior_id_by_role.entry(role).or_insert(id);
             }
         }
 

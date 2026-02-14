@@ -584,7 +584,7 @@ impl Keycode {
         name.parse().ok()
     }
 
-    pub fn to_name(self) -> Option<&'static str> {
-        Some(<&'static str>::from(self))
+    pub fn to_name(self) -> &'static str {
+        <&'static str>::from(self)
     }
 }

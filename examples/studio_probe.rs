@@ -2,14 +2,11 @@ use std::error::Error;
 use std::io::{Read, Write};
 use std::process::ExitCode;
 
-use zmk_studio_rust_client::binding::Behavior;
-use zmk_studio_rust_client::client::{ClientError, StudioClient};
-use zmk_studio_rust_client::keycode::Keycode;
-use zmk_studio_rust_client::proto::zmk::meta::ErrorConditions;
 #[cfg(feature = "ble")]
 use zmk_studio_rust_client::transport::ble::{BleConnectOptions, BleTransport};
 #[cfg(feature = "serial")]
 use zmk_studio_rust_client::transport::serial::SerialTransport;
+use zmk_studio_rust_client::{Behavior, ClientError, Keycode, StudioClient};
 
 fn main() -> ExitCode {
     match run() {
@@ -80,8 +77,8 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
 
     let keymap = match client.get_keymap() {
         Ok(keymap) => keymap,
-        Err(ClientError::Meta(ErrorConditions::UnlockRequired)) => {
-            println!("Unlock required for keymap APIs (`&studio_unlock` then rerun).");
+        Err(ClientError::Meta(_)) => {
+            println!("Keymap request denied (likely locked); press `&studio_unlock` then rerun.");
             return Ok(());
         }
         Err(err) => return Err(Box::new(err)),
