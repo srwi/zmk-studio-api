@@ -1,5 +1,3 @@
-//! Byte framing for ZMK Studio transport frames.
-
 pub const FRAMING_SOF: u8 = 0xAB;
 pub const FRAMING_ESC: u8 = 0xAC;
 pub const FRAMING_EOF: u8 = 0xAD;
@@ -20,9 +18,9 @@ pub enum FramingError {
 impl core::fmt::Display for FramingError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ExpectedStartOfFrame => write!(f, "expected start-of-frame byte"),
+            Self::ExpectedStartOfFrame => write!(f, "Expected start-of-frame byte"),
             Self::UnexpectedStartOfFrameMidFrame => {
-                write!(f, "unexpected start-of-frame mid-frame")
+                write!(f, "Unexpected start-of-frame mid-frame")
             }
         }
     }
@@ -129,7 +127,7 @@ mod tests {
     fn decodes_multiple_frames() {
         let input = [171_u8, 1, 2, 3, 173, 171, 4, 173];
         let mut decoder = FrameDecoder::new();
-        let frames = decoder.push(&input).expect("decode should succeed");
+        let frames = decoder.push(&input).expect("Decode should succeed");
 
         assert_eq!(frames, vec![vec![1, 2, 3], vec![4]]);
     }
@@ -147,7 +145,7 @@ mod tests {
             frames.extend(
                 decoder
                     .push(core::slice::from_ref(&b))
-                    .expect("decode should succeed"),
+                    .expect("Decode should succeed"),
             );
         }
 

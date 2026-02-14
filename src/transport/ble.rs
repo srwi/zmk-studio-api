@@ -13,10 +13,11 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
 
-use crate::client::{BLE_RPC_CHARACTERISTIC_UUID, BLE_SERVICE_UUID};
-
 pub const DEFAULT_SCAN_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+const BLE_SERVICE_UUID: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
+const BLE_RPC_CHARACTERISTIC_UUID: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
 
 #[derive(Debug, Clone)]
 pub struct BleConnectOptions {
@@ -49,13 +50,13 @@ pub enum BleTransportError {
 impl std::fmt::Display for BleTransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::RuntimeInit(err) => write!(f, "failed to initialize runtime: {err}"),
-            Self::Btleplug(err) => write!(f, "ble error: {err}"),
-            Self::Uuid(err) => write!(f, "uuid parse error: {err}"),
-            Self::NoAdapter => write!(f, "no bluetooth adapter available"),
-            Self::NoMatchingPeripheral => write!(f, "no matching zmk studio peripheral found"),
-            Self::MissingRpcCharacteristic => write!(f, "zmk studio rpc characteristic not found"),
-            Self::SetupChannelClosed => write!(f, "ble worker initialization channel closed"),
+            Self::RuntimeInit(err) => write!(f, "Failed to initialize runtime: {err}"),
+            Self::Btleplug(err) => write!(f, "BLE error: {err}"),
+            Self::Uuid(err) => write!(f, "UUID parse error: {err}"),
+            Self::NoAdapter => write!(f, "No Bluetooth adapter available"),
+            Self::NoMatchingPeripheral => write!(f, "No matching ZMK Studio peripheral found"),
+            Self::MissingRpcCharacteristic => write!(f, "ZMK Studio RPC characteristic not found"),
+            Self::SetupChannelClosed => write!(f, "BLE worker initialization channel closed"),
         }
     }
 }
@@ -143,11 +144,11 @@ impl Read for BleTransport {
                 .map_err(|err| match err {
                     mpsc::RecvTimeoutError::Timeout => std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
-                        "timed out waiting for BLE data",
+                        "Timed out waiting for BLE data",
                     ),
                     mpsc::RecvTimeoutError::Disconnected => std::io::Error::new(
                         std::io::ErrorKind::UnexpectedEof,
-                        "ble transport disconnected",
+                        "BLE transport disconnected",
                     ),
                 })?;
             self.read_queue.extend(packet);
@@ -171,7 +172,7 @@ impl Write for BleTransport {
         self.write_tx.send(buf.to_vec()).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
-                "ble transport worker is not running",
+                "BLE transport worker is not running",
             )
         })?;
         Ok(buf.len())

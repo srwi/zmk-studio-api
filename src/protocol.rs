@@ -1,5 +1,3 @@
-//! Protocol-level helpers for frame + protobuf handling.
-
 use prost::Message;
 
 use crate::framing::{FrameDecoder, FramingError, encode_frame};
@@ -14,8 +12,8 @@ pub enum ProtocolError {
 impl core::fmt::Display for ProtocolError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Framing(err) => write!(f, "framing error: {err}"),
-            Self::Decode(err) => write!(f, "decode error: {err}"),
+            Self::Framing(err) => write!(f, "Framing error: {err}"),
+            Self::Decode(err) => write!(f, "Decode error: {err}"),
         }
     }
 }

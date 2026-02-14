@@ -13,8 +13,8 @@ pub enum SerialTransportError {
 impl std::fmt::Display for SerialTransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Open(err) => write!(f, "failed to open serial port: {err}"),
-            Self::NoMatchingPort => write!(f, "no matching serial port found"),
+            Self::Open(err) => write!(f, "Failed to open serial port: {err}"),
+            Self::NoMatchingPort => write!(f, "No matching serial port found"),
         }
     }
 }

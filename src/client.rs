@@ -1,5 +1,3 @@
-//! High-level typed API for interacting with ZMK Studio devices.
-
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 
@@ -13,11 +11,6 @@ use crate::protocol::{ProtocolError, decode_responses, encode_request};
 use crate::transport::ble::{BleConnectOptions, BleTransport, BleTransportError};
 #[cfg(feature = "serial")]
 use crate::transport::serial::{SerialTransport, SerialTransportError};
-
-/// BLE service UUID used by the firmware and TypeScript client.
-pub const BLE_SERVICE_UUID: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
-/// BLE RPC characteristic UUID used by the firmware and TypeScript client.
-pub const BLE_RPC_CHARACTERISTIC_UUID: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -47,63 +40,63 @@ impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(err) => write!(f, "I/O error: {err}"),
-            Self::Protocol(err) => write!(f, "protocol error: {err}"),
-            Self::Meta(cond) => write!(f, "device returned meta error: {}", cond.as_str_name()),
-            Self::NoResponse => write!(f, "device returned no response"),
-            Self::MissingResponseType => write!(f, "response was missing type"),
-            Self::MissingSubsystem => write!(f, "request_response was missing subsystem"),
+            Self::Protocol(err) => write!(f, "Protocol error: {err}"),
+            Self::Meta(cond) => write!(f, "Device returned meta error: {}", cond.as_str_name()),
+            Self::NoResponse => write!(f, "Device returned no response"),
+            Self::MissingResponseType => write!(f, "Response was missing type"),
+            Self::MissingSubsystem => write!(f, "Request response was missing subsystem"),
             Self::UnexpectedSubsystem(expected) => {
-                write!(f, "unexpected subsystem in response; expected {expected}")
+                write!(f, "Unexpected subsystem in response; expected {expected}")
             }
             Self::UnexpectedRequestId { expected, actual } => {
                 write!(
                     f,
-                    "unexpected request id in response: expected {expected}, got {actual}"
+                    "Unexpected request ID in response: expected {expected}, got {actual}"
                 )
             }
             Self::UnknownEnumValue { field, value } => {
-                write!(f, "unknown enum value for {field}: {value}")
+                write!(f, "Unknown enum value for {field}: {value}")
             }
             Self::SetLayerBindingFailed(code) => {
-                write!(f, "set layer binding failed: {}", code.as_str_name())
+                write!(f, "Set layer binding failed: {}", code.as_str_name())
             }
             Self::SaveChangesFailed(code) => {
-                write!(f, "save changes failed: {}", code.as_str_name())
+                write!(f, "Save changes failed: {}", code.as_str_name())
             }
             Self::SetActivePhysicalLayoutFailed(code) => {
                 write!(
                     f,
-                    "set active physical layout failed: {}",
+                    "Set active physical layout failed: {}",
                     code.as_str_name()
                 )
             }
-            Self::MoveLayerFailed(code) => write!(f, "move layer failed: {}", code.as_str_name()),
-            Self::AddLayerFailed(code) => write!(f, "add layer failed: {}", code.as_str_name()),
+            Self::MoveLayerFailed(code) => write!(f, "Move layer failed: {}", code.as_str_name()),
+            Self::AddLayerFailed(code) => write!(f, "Add layer failed: {}", code.as_str_name()),
             Self::RemoveLayerFailed(code) => {
-                write!(f, "remove layer failed: {}", code.as_str_name())
+                write!(f, "Remove layer failed: {}", code.as_str_name())
             }
             Self::RestoreLayerFailed(code) => {
-                write!(f, "restore layer failed: {}", code.as_str_name())
+                write!(f, "Restore layer failed: {}", code.as_str_name())
             }
             Self::SetLayerPropsFailed(code) => {
-                write!(f, "set layer properties failed: {}", code.as_str_name())
+                write!(f, "Set layer properties failed: {}", code.as_str_name())
             }
             Self::InvalidLayerOrPosition {
                 layer_id,
                 key_position,
             } => write!(
                 f,
-                "invalid layer/position: layer_id={layer_id}, key_position={key_position}"
+                "Invalid layer/position: layer_id={layer_id}, key_position={key_position}"
             ),
             Self::BindingNotKeyboardCompatible {
                 layer_id,
                 key_position,
             } => write!(
                 f,
-                "binding at layer_id={layer_id}, key_position={key_position} is not keyboard-key compatible"
+                "Binding at layer_id={layer_id}, key_position={key_position} is not keyboard-key compatible"
             ),
             Self::MissingBehaviorRole(role) => {
-                write!(f, "missing required behavior role in firmware: {role}")
+                write!(f, "Missing required behavior role in firmware: {role}")
             }
         }
     }
@@ -328,6 +321,13 @@ impl<T: Read + Write> StudioClient<T> {
                 (Some(hold), Some(tap)) => Behavior::ModTap { hold, tap },
                 _ => Behavior::Raw(binding),
             },
+            BehaviorRole::StickyKey => match Keycode::from_hid_usage(binding.param1) {
+                Some(key) => Behavior::StickyKey(key),
+                None => Behavior::Raw(binding),
+            },
+            BehaviorRole::StickyLayer => Behavior::StickyLayer {
+                layer_id: binding.param1,
+            },
             BehaviorRole::MomentaryLayer => Behavior::MomentaryLayer {
                 layer_id: binding.param1,
             },
@@ -337,6 +337,40 @@ impl<T: Read + Write> StudioClient<T> {
             BehaviorRole::ToLayer => Behavior::ToLayer {
                 layer_id: binding.param1,
             },
+            BehaviorRole::Bluetooth => Behavior::Bluetooth {
+                command: binding.param1,
+                value: binding.param2,
+            },
+            BehaviorRole::ExternalPower => Behavior::ExternalPower {
+                value: binding.param1,
+            },
+            BehaviorRole::OutputSelection => Behavior::OutputSelection {
+                value: binding.param1,
+            },
+            BehaviorRole::Backlight => Behavior::Backlight {
+                command: binding.param1,
+                value: binding.param2,
+            },
+            BehaviorRole::Underglow => Behavior::Underglow {
+                command: binding.param1,
+                value: binding.param2,
+            },
+            BehaviorRole::MouseKeyPress => Behavior::MouseKeyPress {
+                value: binding.param1,
+            },
+            BehaviorRole::MouseMove => Behavior::MouseMove {
+                value: binding.param1,
+            },
+            BehaviorRole::MouseScroll => Behavior::MouseScroll {
+                value: binding.param1,
+            },
+            BehaviorRole::CapsWord => Behavior::CapsWord,
+            BehaviorRole::KeyRepeat => Behavior::KeyRepeat,
+            BehaviorRole::Reset => Behavior::Reset,
+            BehaviorRole::Bootloader => Behavior::Bootloader,
+            BehaviorRole::SoftOff => Behavior::SoftOff,
+            BehaviorRole::StudioUnlock => Behavior::StudioUnlock,
+            BehaviorRole::GraveEscape => Behavior::GraveEscape,
             BehaviorRole::Transparent => Behavior::Transparent,
             BehaviorRole::None => Behavior::None,
         };
@@ -376,6 +410,18 @@ impl<T: Read + Write> StudioClient<T> {
                 param1: hold.to_hid_usage(),
                 param2: tap.to_hid_usage(),
             },
+            Behavior::StickyKey(key) => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::StickyKey, "Sticky Key")?,
+                param1: key.to_hid_usage(),
+                param2: 0,
+            },
+            Behavior::StickyLayer {
+                layer_id: target_layer_id,
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::StickyLayer, "Sticky Layer")?,
+                param1: target_layer_id,
+                param2: 0,
+            },
             Behavior::MomentaryLayer {
                 layer_id: hold_layer_id,
             } => zmk::keymap::BehaviorBinding {
@@ -396,6 +442,83 @@ impl<T: Read + Write> StudioClient<T> {
             } => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::ToLayer, "To Layer")?,
                 param1: target_layer_id,
+                param2: 0,
+            },
+            Behavior::Bluetooth { command, value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::Bluetooth, "Bluetooth")?,
+                param1: command,
+                param2: value,
+            },
+            Behavior::ExternalPower { value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::ExternalPower, "External Power")?,
+                param1: value,
+                param2: 0,
+            },
+            Behavior::OutputSelection { value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self
+                    .behavior_id_for(BehaviorRole::OutputSelection, "Output Selection")?,
+                param1: value,
+                param2: 0,
+            },
+            Behavior::Backlight { command, value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::Backlight, "Backlight")?,
+                param1: command,
+                param2: value,
+            },
+            Behavior::Underglow { command, value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::Underglow, "Underglow")?,
+                param1: command,
+                param2: value,
+            },
+            Behavior::MouseKeyPress { value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self
+                    .behavior_id_for(BehaviorRole::MouseKeyPress, "Mouse Key Press")?,
+                param1: value,
+                param2: 0,
+            },
+            Behavior::MouseMove { value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::MouseMove, "Mouse Move")?,
+                param1: value,
+                param2: 0,
+            },
+            Behavior::MouseScroll { value } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::MouseScroll, "Mouse Scroll")?,
+                param1: value,
+                param2: 0,
+            },
+            Behavior::CapsWord => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::CapsWord, "Caps Word")?,
+                param1: 0,
+                param2: 0,
+            },
+            Behavior::KeyRepeat => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::KeyRepeat, "Key Repeat")?,
+                param1: 0,
+                param2: 0,
+            },
+            Behavior::Reset => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::Reset, "Reset")?,
+                param1: 0,
+                param2: 0,
+            },
+            Behavior::Bootloader => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::Bootloader, "Bootloader")?,
+                param1: 0,
+                param2: 0,
+            },
+            Behavior::SoftOff => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::SoftOff, "Soft Off")?,
+                param1: 0,
+                param2: 0,
+            },
+            Behavior::StudioUnlock => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::StudioUnlock, "Studio Unlock")?,
+                param1: 0,
+                param2: 0,
+            },
+            Behavior::GraveEscape => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::GraveEscape, "Grave/Escape")?,
+                param1: 0,
                 param2: 0,
             },
             Behavior::Transparent => zmk::keymap::BehaviorBinding {
@@ -750,7 +873,7 @@ impl<T: Read + Write> StudioClient<T> {
             if read == 0 {
                 return Err(ClientError::Io(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
-                    "transport reached EOF",
+                    "Transport reached EOF",
                 )));
             }
 
