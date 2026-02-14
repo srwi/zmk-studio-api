@@ -1,9 +1,11 @@
 //! High-level typed API for interacting with ZMK Studio devices.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 
+use crate::binding::{BehaviorRole, BindingKind, role_from_display_name};
 use crate::framing::FrameDecoder;
+use crate::keycode::{KeyCode, is_keyboard_usage};
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
@@ -36,6 +38,9 @@ pub enum ClientError {
     RemoveLayerFailed(zmk::keymap::RemoveLayerErrorCode),
     RestoreLayerFailed(zmk::keymap::RestoreLayerErrorCode),
     SetLayerPropsFailed(zmk::keymap::SetLayerPropsResponse),
+    InvalidLayerOrPosition { layer_id: u32, key_position: i32 },
+    BindingNotKeyboardCompatible { layer_id: u32, key_position: i32 },
+    MissingBehaviorRole(&'static str),
 }
 
 impl std::fmt::Display for ClientError {
@@ -83,6 +88,23 @@ impl std::fmt::Display for ClientError {
             Self::SetLayerPropsFailed(code) => {
                 write!(f, "set layer properties failed: {}", code.as_str_name())
             }
+            Self::InvalidLayerOrPosition {
+                layer_id,
+                key_position,
+            } => write!(
+                f,
+                "invalid layer/position: layer_id={layer_id}, key_position={key_position}"
+            ),
+            Self::BindingNotKeyboardCompatible {
+                layer_id,
+                key_position,
+            } => write!(
+                f,
+                "binding at layer_id={layer_id}, key_position={key_position} is not keyboard-key compatible"
+            ),
+            Self::MissingBehaviorRole(role) => {
+                write!(f, "missing required behavior role in firmware: {role}")
+            }
         }
     }
 }
@@ -116,6 +138,8 @@ pub struct StudioClient<T> {
     read_buffer: Vec<u8>,
     responses: VecDeque<studio::Response>,
     notifications: VecDeque<studio::Notification>,
+    behavior_role_by_id: HashMap<i32, BehaviorRole>,
+    behavior_id_by_role: HashMap<BehaviorRole, i32>,
 }
 
 impl<T: Read + Write> StudioClient<T> {
@@ -131,6 +155,8 @@ impl<T: Read + Write> StudioClient<T> {
             read_buffer: vec![0; read_buffer_size.max(1)],
             responses: VecDeque::new(),
             notifications: VecDeque::new(),
+            behavior_role_by_id: HashMap::new(),
+            behavior_id_by_role: HashMap::new(),
         }
     }
 
@@ -257,6 +283,190 @@ impl<T: Read + Write> StudioClient<T> {
             }
             _ => Err(ClientError::MissingResponseType),
         }
+    }
+
+    /// Typed keymap API: read a keyboard-page key from a specific layer/key position.
+    /// Returns `None` when the binding exists but is not keyboard-page compatible.
+    pub fn get_key_at(
+        &mut self,
+        layer_id: u32,
+        key_position: i32,
+    ) -> Result<Option<KeyCode>, ClientError> {
+        let keymap = self.get_keymap()?;
+        let binding = binding_at(&keymap, layer_id, key_position).ok_or(
+            ClientError::InvalidLayerOrPosition {
+                layer_id,
+                key_position,
+            },
+        )?;
+
+        if is_keyboard_usage(binding.param1) {
+            return Ok(Some(KeyCode::from_hid_usage(binding.param1)));
+        }
+        if is_keyboard_usage(binding.param2) {
+            return Ok(Some(KeyCode::from_hid_usage(binding.param2)));
+        }
+
+        Ok(None)
+    }
+
+    /// Typed keymap API: set a keyboard-page key at a specific layer/key position.
+    /// The existing binding is used as a template so the behavior ID and non-key parameter remain intact.
+    pub fn set_key_at(
+        &mut self,
+        layer_id: u32,
+        key_position: i32,
+        key: KeyCode,
+    ) -> Result<(), ClientError> {
+        let keymap = self.get_keymap()?;
+        let current = binding_at(&keymap, layer_id, key_position).ok_or(
+            ClientError::InvalidLayerOrPosition {
+                layer_id,
+                key_position,
+            },
+        )?;
+
+        let usage = key.to_hid_usage();
+        if !is_keyboard_usage(usage) {
+            return Err(ClientError::BindingNotKeyboardCompatible {
+                layer_id,
+                key_position,
+            });
+        }
+
+        let mut next = current;
+        if is_keyboard_usage(current.param1) {
+            next.param1 = usage;
+        } else if is_keyboard_usage(current.param2) {
+            next.param2 = usage;
+        } else {
+            return Err(ClientError::BindingNotKeyboardCompatible {
+                layer_id,
+                key_position,
+            });
+        }
+
+        self.set_layer_binding(layer_id, key_position, next)
+    }
+
+    pub fn get_binding_kind_at(
+        &mut self,
+        layer_id: u32,
+        key_position: i32,
+    ) -> Result<BindingKind, ClientError> {
+        self.ensure_behavior_catalog()?;
+
+        let keymap = self.get_keymap()?;
+        let binding = binding_at(&keymap, layer_id, key_position).ok_or(
+            ClientError::InvalidLayerOrPosition {
+                layer_id,
+                key_position,
+            },
+        )?;
+
+        let Some(role) = self.behavior_role_by_id.get(&binding.behavior_id).copied() else {
+            return Ok(BindingKind::Raw(binding));
+        };
+
+        let kind = match role {
+            BehaviorRole::KeyPress => {
+                BindingKind::KeyPress(KeyCode::from_hid_usage(binding.param1))
+            }
+            BehaviorRole::KeyToggle => {
+                BindingKind::KeyToggle(KeyCode::from_hid_usage(binding.param1))
+            }
+            BehaviorRole::LayerTap => BindingKind::LayerTap {
+                layer_id: binding.param1,
+                tap: KeyCode::from_hid_usage(binding.param2),
+            },
+            BehaviorRole::ModTap => BindingKind::ModTap {
+                hold: KeyCode::from_hid_usage(binding.param1),
+                tap: KeyCode::from_hid_usage(binding.param2),
+            },
+            BehaviorRole::MomentaryLayer => BindingKind::MomentaryLayer {
+                layer_id: binding.param1,
+            },
+            BehaviorRole::ToggleLayer => BindingKind::ToggleLayer {
+                layer_id: binding.param1,
+            },
+            BehaviorRole::ToLayer => BindingKind::ToLayer {
+                layer_id: binding.param1,
+            },
+            BehaviorRole::Transparent => BindingKind::Transparent,
+            BehaviorRole::None => BindingKind::None,
+        };
+
+        Ok(kind)
+    }
+
+    pub fn set_binding_kind_at(
+        &mut self,
+        layer_id: u32,
+        key_position: i32,
+        kind: BindingKind,
+    ) -> Result<(), ClientError> {
+        self.ensure_behavior_catalog()?;
+
+        let binding = match kind {
+            BindingKind::KeyPress(key) => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::KeyPress, "Key Press")?,
+                param1: key.to_hid_usage(),
+                param2: 0,
+            },
+            BindingKind::KeyToggle(key) => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::KeyToggle, "Key Toggle")?,
+                param1: key.to_hid_usage(),
+                param2: 0,
+            },
+            BindingKind::LayerTap {
+                layer_id: hold_layer_id,
+                tap,
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::LayerTap, "Layer-Tap")?,
+                param1: hold_layer_id,
+                param2: tap.to_hid_usage(),
+            },
+            BindingKind::ModTap { hold, tap } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::ModTap, "Mod-Tap")?,
+                param1: hold.to_hid_usage(),
+                param2: tap.to_hid_usage(),
+            },
+            BindingKind::MomentaryLayer {
+                layer_id: hold_layer_id,
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id: self
+                    .behavior_id_for(BehaviorRole::MomentaryLayer, "Momentary Layer")?,
+                param1: hold_layer_id,
+                param2: 0,
+            },
+            BindingKind::ToggleLayer {
+                layer_id: target_layer_id,
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::ToggleLayer, "Toggle Layer")?,
+                param1: target_layer_id,
+                param2: 0,
+            },
+            BindingKind::ToLayer {
+                layer_id: target_layer_id,
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::ToLayer, "To Layer")?,
+                param1: target_layer_id,
+                param2: 0,
+            },
+            BindingKind::Transparent => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::Transparent, "Transparent")?,
+                param1: 0,
+                param2: 0,
+            },
+            BindingKind::None => zmk::keymap::BehaviorBinding {
+                behavior_id: self.behavior_id_for(BehaviorRole::None, "None")?,
+                param1: 0,
+                param2: 0,
+            },
+            BindingKind::Raw(raw) => raw,
+        };
+
+        self.set_layer_binding(layer_id, key_position, binding)
     }
 
     pub fn check_unsaved_changes(&mut self) -> Result<bool, ClientError> {
@@ -453,6 +663,36 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    fn behavior_id_for(
+        &self,
+        role: BehaviorRole,
+        display_name: &'static str,
+    ) -> Result<i32, ClientError> {
+        self.behavior_id_by_role
+            .get(&role)
+            .copied()
+            .ok_or(ClientError::MissingBehaviorRole(display_name))
+    }
+
+    fn ensure_behavior_catalog(&mut self) -> Result<(), ClientError> {
+        if !self.behavior_role_by_id.is_empty() {
+            return Ok(());
+        }
+
+        let ids = self.list_all_behaviors()?;
+        for id in ids {
+            let details = self.get_behavior_details(id)?;
+            let role = role_from_display_name(&details.display_name);
+            if let Some(role) = role {
+                let id_i32 = id as i32;
+                self.behavior_role_by_id.insert(id_i32, role);
+                self.behavior_id_by_role.entry(role).or_insert(id_i32);
+            }
+        }
+
+        Ok(())
+    }
+
     fn call_core(
         &mut self,
         request_type: zmk::core::request::RequestType,
@@ -577,6 +817,16 @@ impl<T: Read + Write> StudioClient<T> {
             }
         }
     }
+}
+
+fn binding_at(
+    keymap: &zmk::keymap::Keymap,
+    layer_id: u32,
+    key_position: i32,
+) -> Option<zmk::keymap::BehaviorBinding> {
+    let pos = usize::try_from(key_position).ok()?;
+    let layer = keymap.layers.iter().find(|l| l.id == layer_id)?;
+    layer.bindings.get(pos).copied()
 }
 
 #[cfg(feature = "serial")]

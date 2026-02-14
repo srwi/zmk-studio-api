@@ -10,6 +10,9 @@ ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid"]
 
 [dependencies]
 prost = "0.13"
+num_enum = "0.7"
+strum = "0.26"
+strum_macros = "0.26"
 serialport = { version = "4.8", optional = true }
 btleplug = { version = "0.11", optional = true }
 futures = { version = "0.3", optional = true }

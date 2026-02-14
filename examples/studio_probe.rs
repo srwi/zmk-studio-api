@@ -3,8 +3,10 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use zmk_studio_rust_client::binding::BindingKind;
 use zmk_studio_rust_client::client::{ClientError, StudioClient};
-use zmk_studio_rust_client::proto::zmk;
+use zmk_studio_rust_client::keycode::{self, KeyCode, KeyboardCode};
+use zmk_studio_rust_client::proto::zmk::meta::ErrorConditions;
 #[cfg(feature = "ble")]
 use zmk_studio_rust_client::transport::ble::{BleConnectOptions, BleTransport};
 #[cfg(feature = "serial")]
@@ -108,44 +110,42 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
                 return Ok(());
             }
 
-            let template = first_layer.bindings[0];
-            let usage = random_letter_hid_usage();
-            let expected_letter = hid_usage_to_letter(usage).unwrap_or('?');
-            let binding = zmk::keymap::BehaviorBinding {
-                behavior_id: template.behavior_id,
-                param1: usage,
-                param2: template.param2,
-            };
-
+            let keycode = random_letter_key();
+            let current_kind = client.get_binding_kind_at(first_layer.id, 0)?;
             println!(
-                "setting layer_id={} key_position=0 to random letter '{}' with behavior_id={}",
-                first_layer.id, expected_letter, binding.behavior_id
+                "current first-key binding: {}",
+                binding_kind_summary(&current_kind)
             );
 
-            client.set_layer_binding(first_layer.id, 0, binding)?;
+            let next_kind = match current_kind {
+                BindingKind::KeyPress(_) => BindingKind::KeyPress(keycode),
+                BindingKind::KeyToggle(_) => BindingKind::KeyToggle(keycode),
+                BindingKind::LayerTap { layer_id, .. } => BindingKind::LayerTap {
+                    layer_id,
+                    tap: keycode,
+                },
+                BindingKind::ModTap { hold, .. } => BindingKind::ModTap { hold, tap: keycode },
+                _ => {
+                    println!(
+                        "first key binding is not one of KeyPress/KeyToggle/LayerTap/ModTap, skipping edit"
+                    );
+                    return Ok(());
+                }
+            };
 
-            let updated = client.get_keymap()?;
-            let read_binding = updated
-                .layers
-                .first()
-                .and_then(|layer| layer.bindings.first())
-                .copied();
+            let key_name = keycode.to_zmk_name().unwrap_or("UNKNOWN");
+            println!("setting random tap key '{key_name}'");
+            client.set_binding_kind_at(first_layer.id, 0, next_kind)?;
 
-            if let Some(binding) = read_binding {
-                let read_letter = hid_usage_to_letter(binding.param1)
-                    .or_else(|| hid_usage_to_letter(binding.param2))
-                    .unwrap_or('?');
-                println!(
-                    "read back first key: behavior_id={} param1={} param2={} letter='{}'",
-                    binding.behavior_id, binding.param1, binding.param2, read_letter
-                );
-            } else {
-                println!("failed to read back first key after update");
-            }
+            let read_kind = client.get_binding_kind_at(first_layer.id, 0)?;
+            println!(
+                "read back first-key binding: {}",
+                binding_kind_summary(&read_kind)
+            );
 
             println!("note: change is not saved; call save_changes() if you want it persisted.");
         }
-        Err(ClientError::Meta(zmk::meta::ErrorConditions::UnlockRequired)) => {
+        Err(ClientError::Meta(ErrorConditions::UnlockRequired)) => {
             println!("device is locked for secured RPCs.");
             println!("press your `&studio_unlock` key on the keyboard, then rerun this command.");
         }
@@ -161,39 +161,76 @@ fn print_usage() {
     println!("  cargo run --example studio_probe --features ble -- ble [NAME_SUBSTRING]");
 }
 
-fn random_letter_hid_usage() -> u32 {
+fn random_letter_key() -> KeyCode {
+    const LETTERS: [u32; 26] = [
+        keycode::zmk_keys::A.raw(),
+        keycode::zmk_keys::B.raw(),
+        keycode::zmk_keys::C.raw(),
+        keycode::zmk_keys::D.raw(),
+        keycode::zmk_keys::E.raw(),
+        keycode::zmk_keys::F.raw(),
+        keycode::zmk_keys::G.raw(),
+        keycode::zmk_keys::H.raw(),
+        keycode::zmk_keys::I.raw(),
+        keycode::zmk_keys::J.raw(),
+        keycode::zmk_keys::K.raw(),
+        keycode::zmk_keys::L.raw(),
+        keycode::zmk_keys::M.raw(),
+        keycode::zmk_keys::N.raw(),
+        keycode::zmk_keys::O.raw(),
+        keycode::zmk_keys::P.raw(),
+        keycode::zmk_keys::Q.raw(),
+        keycode::zmk_keys::R.raw(),
+        keycode::zmk_keys::S.raw(),
+        keycode::zmk_keys::T.raw(),
+        keycode::zmk_keys::U.raw(),
+        keycode::zmk_keys::V.raw(),
+        keycode::zmk_keys::W.raw(),
+        keycode::zmk_keys::X.raw(),
+        keycode::zmk_keys::Y.raw(),
+        keycode::zmk_keys::Z.raw(),
+    ];
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    let letter_id = 4 + (now % 26);
-    encode_keyboard_usage(letter_id)
+    let idx = (now as usize) % LETTERS.len();
+    KeyCode::from_hid_usage(LETTERS[idx])
 }
 
-fn hid_usage_to_letter(usage: u32) -> Option<char> {
-    let usage_id = hid_usage_id(usage);
-    if is_keyboard_usage_page(usage) && (4..=29).contains(&usage_id) {
-        let offset = (usage_id - 4) as u8;
-        Some((b'A' + offset) as char)
-    } else {
-        None
+fn binding_kind_summary(kind: &BindingKind) -> String {
+    match kind {
+        BindingKind::KeyPress(k) => format!("KeyPress({})", keycode_summary(*k)),
+        BindingKind::KeyToggle(k) => format!("KeyToggle({})", keycode_summary(*k)),
+        BindingKind::LayerTap { layer_id, tap } => {
+            format!("LayerTap(layer={layer_id}, tap={})", keycode_summary(*tap))
+        }
+        BindingKind::ModTap { hold, tap } => {
+            format!(
+                "ModTap(hold={}, tap={})",
+                keycode_summary(*hold),
+                keycode_summary(*tap)
+            )
+        }
+        BindingKind::MomentaryLayer { layer_id } => format!("MomentaryLayer({layer_id})"),
+        BindingKind::ToggleLayer { layer_id } => format!("ToggleLayer({layer_id})"),
+        BindingKind::ToLayer { layer_id } => format!("ToLayer({layer_id})"),
+        BindingKind::Transparent => "Transparent".to_string(),
+        BindingKind::None => "None".to_string(),
+        BindingKind::Raw(raw) => format!(
+            "Raw(behavior_id={}, param1={}, param2={})",
+            raw.behavior_id, raw.param1, raw.param2
+        ),
     }
 }
 
-const HID_USAGE_PAGE_KEYBOARD: u32 = 0x07;
-
-fn encode_keyboard_usage(usage_id: u32) -> u32 {
-    (HID_USAGE_PAGE_KEYBOARD << 16) | usage_id
-}
-
-fn hid_usage_page(usage: u32) -> u32 {
-    (usage >> 16) & 0xFF
-}
-
-fn hid_usage_id(usage: u32) -> u32 {
-    usage & 0xFFFF
-}
-
-fn is_keyboard_usage_page(usage: u32) -> bool {
-    hid_usage_page(usage) == HID_USAGE_PAGE_KEYBOARD
+fn keycode_summary(key: KeyCode) -> String {
+    match key {
+        KeyCode::Keyboard(KeyboardCode::Modifier(m)) => format!("Keyboard::{m:?}"),
+        KeyCode::Keyboard(KeyboardCode::UsageId(id)) => format!("Keyboard::UsageId({id})"),
+        KeyCode::Consumer(id) => format!("Consumer({id})"),
+        KeyCode::GenericDesktop(id) => format!("GenericDesktop({id})"),
+        KeyCode::Other(raw) => format!("Other(page={}, id={})", raw.page, raw.id),
+    }
 }
