@@ -3,8 +3,18 @@ name = "zmk-studio-rust-client"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["serial"]
+serial = ["dep:serialport"]
+ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid"]
+
 [dependencies]
 prost = "0.13"
+serialport = { version = "4.8", optional = true }
+btleplug = { version = "0.11", optional = true }
+futures = { version = "0.3", optional = true }
+uuid = { version = "1.11", optional = true }
+tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
 
 [build-dependencies]
 prost-build = "0.13"

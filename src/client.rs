@@ -7,6 +7,10 @@ use crate::framing::FrameDecoder;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
+#[cfg(feature = "ble")]
+use crate::transport::ble::{BleConnectOptions, BleTransport, BleTransportError};
+#[cfg(feature = "serial")]
+use crate::transport::serial::{SerialTransport, SerialTransportError};
 
 /// BLE service UUID used by the firmware and TypeScript client.
 pub const BLE_SERVICE_UUID: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
@@ -572,5 +576,23 @@ impl<T: Read + Write> StudioClient<T> {
                 return Ok(response);
             }
         }
+    }
+}
+
+#[cfg(feature = "serial")]
+impl StudioClient<SerialTransport> {
+    pub fn open_serial(path: &str) -> Result<Self, SerialTransportError> {
+        Ok(Self::new(SerialTransport::open(path)?))
+    }
+}
+
+#[cfg(feature = "ble")]
+impl StudioClient<BleTransport> {
+    pub fn connect_ble() -> Result<Self, BleTransportError> {
+        Ok(Self::new(BleTransport::connect_first()?))
+    }
+
+    pub fn connect_ble_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
+        Ok(Self::new(BleTransport::connect_with_options(options)?))
     }
 }
