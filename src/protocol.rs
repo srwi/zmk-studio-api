@@ -2,7 +2,7 @@
 
 use prost::Message;
 
-use crate::framing::{encode_frame, FrameDecoder, FramingError};
+use crate::framing::{FrameDecoder, FramingError, encode_frame};
 use crate::proto::zmk::studio::{Request, Response};
 
 #[derive(Debug)]

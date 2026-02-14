@@ -21,7 +21,9 @@ impl core::fmt::Display for FramingError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::ExpectedStartOfFrame => write!(f, "expected start-of-frame byte"),
-            Self::UnexpectedStartOfFrameMidFrame => write!(f, "unexpected start-of-frame mid-frame"),
+            Self::UnexpectedStartOfFrameMidFrame => {
+                write!(f, "unexpected start-of-frame mid-frame")
+            }
         }
     }
 }
@@ -102,7 +104,7 @@ impl FrameDecoder {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_frame, FrameDecoder};
+    use super::{FrameDecoder, encode_frame};
 
     #[test]
     fn encodes_basic_frame() {
@@ -117,7 +119,9 @@ mod tests {
         let encoded = encode_frame(&input);
         assert_eq!(
             encoded,
-            vec![171, 1, 172, 171, 172, 172, 2, 3, 172, 171, 4, 172, 173, 5, 173]
+            vec![
+                171, 1, 172, 171, 172, 172, 2, 3, 172, 171, 4, 172, 173, 5, 173
+            ]
         );
     }
 
@@ -132,7 +136,9 @@ mod tests {
 
     #[test]
     fn decodes_escaped_frame_byte_by_byte() {
-        let input = [171_u8, 1, 172, 171, 172, 172, 2, 3, 172, 171, 4, 172, 173, 5, 173];
+        let input = [
+            171_u8, 1, 172, 171, 172, 172, 2, 3, 172, 171, 4, 172, 173, 5, 173,
+        ];
 
         let mut decoder = FrameDecoder::new();
         let mut frames = Vec::new();
