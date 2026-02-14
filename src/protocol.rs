@@ -43,21 +43,6 @@ pub fn encode_request(request: &Request) -> Vec<u8> {
     encode_frame(&request.encode_to_vec())
 }
 
-pub fn encode_response(response: &Response) -> Vec<u8> {
-    encode_frame(&response.encode_to_vec())
-}
-
-pub fn decode_requests(
-    decoder: &mut FrameDecoder,
-    chunk: &[u8],
-) -> Result<Vec<Request>, ProtocolError> {
-    decoder
-        .push(chunk)?
-        .into_iter()
-        .map(|frame| Request::decode(frame.as_slice()).map_err(ProtocolError::from))
-        .collect()
-}
-
 pub fn decode_responses(
     decoder: &mut FrameDecoder,
     chunk: &[u8],

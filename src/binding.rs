@@ -31,6 +31,10 @@ pub enum BehaviorRole {
     None,
 }
 
+/// Typed behavior value for a single key binding.
+///
+/// Used by [`crate::StudioClient::get_key_at`] and [`crate::StudioClient::set_key_at`].
+/// Unknown or unmapped bindings are represented as [`Behavior::Raw`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum Behavior {
     KeyPress(Keycode),

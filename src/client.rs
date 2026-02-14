@@ -8,10 +8,11 @@ use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
 #[cfg(feature = "ble")]
-use crate::transport::ble::{BleConnectOptions, BleTransport, BleTransportError};
+use crate::transport::ble::{BleTransport, BleTransportError};
 #[cfg(feature = "serial")]
 use crate::transport::serial::{SerialTransport, SerialTransportError};
 
+/// High-level error type returned by [`StudioClient`] operations.
 #[derive(Debug)]
 pub enum ClientError {
     Io(std::io::Error),
@@ -120,6 +121,10 @@ impl From<ProtocolError> for ClientError {
     }
 }
 
+/// High-level synchronous ZMK Studio RPC client.
+///
+/// The generic parameter `T` is any transport implementing [`Read`] + [`Write`]
+/// (for example [`crate::transport::serial::SerialTransport`]).
 pub struct StudioClient<T> {
     io: T,
     next_request_id: u32,
@@ -136,7 +141,7 @@ impl<T: Read + Write> StudioClient<T> {
         Self::with_read_buffer(io, 256)
     }
 
-    pub fn with_read_buffer(io: T, read_buffer_size: usize) -> Self {
+    fn with_read_buffer(io: T, read_buffer_size: usize) -> Self {
         Self {
             io,
             next_request_id: 0,
@@ -149,14 +154,12 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        self.io
-    }
-
+    /// Returns the next queued notification, if any.
     pub fn next_notification(&mut self) -> Option<studio::Notification> {
         self.notifications.pop_front()
     }
 
+    /// Blocks until a notification arrives and returns it.
     pub fn read_notification_blocking(&mut self) -> Result<studio::Notification, ClientError> {
         loop {
             if let Some(notification) = self.next_notification() {
@@ -167,6 +170,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Returns static device information.
     pub fn get_device_info(&mut self) -> Result<zmk::core::GetDeviceInfoResponse, ClientError> {
         let response = self.call_core(zmk::core::request::RequestType::GetDeviceInfo(true))?;
         match response.response_type {
@@ -175,6 +179,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Returns the current Studio lock state.
     pub fn get_lock_state(&mut self) -> Result<zmk::core::LockState, ClientError> {
         let response = self.call_core(zmk::core::request::RequestType::GetLockState(true))?;
         match response.response_type {
@@ -188,6 +193,9 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Resets settings on the device.
+    ///
+    /// Returns the firmware-provided success boolean.
     pub fn reset_settings(&mut self) -> Result<bool, ClientError> {
         let response = self.call_core(zmk::core::request::RequestType::ResetSettings(true))?;
         match response.response_type {
@@ -196,6 +204,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Lists behavior IDs available on the connected device.
     pub fn list_all_behaviors(&mut self) -> Result<Vec<u32>, ClientError> {
         let response =
             self.call_behaviors(zmk::behaviors::request::RequestType::ListAllBehaviors(true))?;
@@ -207,6 +216,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Returns details for a behavior ID (name and parameter metadata).
     pub fn get_behavior_details(
         &mut self,
         behavior_id: u32,
@@ -223,6 +233,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Returns the current keymap state from the device.
     pub fn get_keymap(&mut self) -> Result<zmk::keymap::Keymap, ClientError> {
         let response = self.call_keymap(zmk::keymap::request::RequestType::GetKeymap(true))?;
         match response.response_type {
@@ -231,6 +242,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Returns available physical layouts and the active layout index.
     pub fn get_physical_layouts(&mut self) -> Result<zmk::keymap::PhysicalLayouts, ClientError> {
         let response =
             self.call_keymap(zmk::keymap::request::RequestType::GetPhysicalLayouts(true))?;
@@ -240,6 +252,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Sets a raw behavior binding for a specific layer position.
     pub fn set_layer_binding(
         &mut self,
         layer_id: u32,
@@ -274,7 +287,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
-    /// Typed keymap API: read a behavior from a specific layer/key position.
+    /// Reads a behavior from a specific layer/key position.
     pub fn get_key_at(
         &mut self,
         layer_id: u32,
@@ -377,9 +390,8 @@ impl<T: Read + Write> StudioClient<T> {
         Ok(behavior)
     }
 
-    /// Typed keymap API: set a behavior at a specific layer/key position.
+    /// Set a behavior at a specific layer/key position.
     ///
-    /// This updates the device's working keymap state only.
     /// Persist with [`StudioClient::save_changes`] or revert with [`StudioClient::discard_changes`].
     pub fn set_key_at(
         &mut self,
@@ -539,6 +551,7 @@ impl<T: Read + Write> StudioClient<T> {
         self.set_layer_binding(layer_id, key_position, binding)
     }
 
+    /// Returns whether there are pending unsaved keymap/layout changes.
     pub fn check_unsaved_changes(&mut self) -> Result<bool, ClientError> {
         let response =
             self.call_keymap(zmk::keymap::request::RequestType::CheckUnsavedChanges(true))?;
@@ -584,6 +597,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Sets the active physical layout by index and returns the resulting keymap.
     pub fn set_active_physical_layout(
         &mut self,
         index: u32,
@@ -612,6 +626,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Moves a layer from `start_index` to `dest_index` and returns the updated keymap.
     pub fn move_layer(
         &mut self,
         start_index: u32,
@@ -640,6 +655,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Adds a layer and returns firmware-provided details about the created layer.
     pub fn add_layer(&mut self) -> Result<zmk::keymap::AddLayerResponseDetails, ClientError> {
         let response = self.call_keymap(zmk::keymap::request::RequestType::AddLayer(
             zmk::keymap::AddLayerRequest {},
@@ -662,6 +678,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Removes a layer by index.
     pub fn remove_layer(&mut self, layer_index: u32) -> Result<(), ClientError> {
         let request = zmk::keymap::RemoveLayerRequest { layer_index };
         let response = self.call_keymap(zmk::keymap::request::RequestType::RemoveLayer(request))?;
@@ -683,6 +700,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Restores a previously removed layer at a specific index.
     pub fn restore_layer(
         &mut self,
         layer_id: u32,
@@ -709,6 +727,7 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
+    /// Sets user-facing properties for a layer (currently just `name`).
     pub fn set_layer_props(
         &mut self,
         layer_id: u32,
@@ -908,6 +927,7 @@ fn binding_at(
 
 #[cfg(feature = "serial")]
 impl StudioClient<SerialTransport> {
+    /// Convenience constructor for opening a serial transport and wrapping it in a client.
     pub fn open_serial(path: &str) -> Result<Self, SerialTransportError> {
         Ok(Self::new(SerialTransport::open(path)?))
     }
@@ -915,11 +935,8 @@ impl StudioClient<SerialTransport> {
 
 #[cfg(feature = "ble")]
 impl StudioClient<BleTransport> {
+    /// Convenience constructor for connecting to the first matching BLE device.
     pub fn connect_ble() -> Result<Self, BleTransportError> {
         Ok(Self::new(BleTransport::connect_first()?))
-    }
-
-    pub fn connect_ble_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
-        Ok(Self::new(BleTransport::connect_with_options(options)?))
     }
 }

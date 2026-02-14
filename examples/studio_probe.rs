@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 
 #[cfg(feature = "ble")]
-use zmk_studio_rust_client::transport::ble::{BleConnectOptions, BleTransport};
+use zmk_studio_rust_client::transport::ble::BleTransport;
 #[cfg(feature = "serial")]
 use zmk_studio_rust_client::transport::serial::SerialTransport;
 use zmk_studio_rust_client::{Behavior, ClientError, Keycode, StudioClient};
@@ -44,11 +44,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         "ble" => {
             #[cfg(feature = "ble")]
             {
-                let options = BleConnectOptions {
-                    name_contains: args.next(),
-                    ..Default::default()
-                };
-                let client = StudioClient::new(BleTransport::connect_with_options(options)?);
+                let _name_substring = args.next();
+                let client = StudioClient::new(BleTransport::connect_first()?);
                 run_probe(client)
             }
             #[cfg(not(feature = "ble"))]
@@ -122,5 +119,5 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
 fn print_usage() {
     println!("Usage:");
     println!("  cargo run --example studio_probe -- serial <PORT>");
-    println!("  cargo run --example studio_probe --features ble -- ble [NAME_SUBSTRING]");
+    println!("  cargo run --example studio_probe --features ble -- ble");
 }

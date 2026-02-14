@@ -13,17 +13,17 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
 
-pub const DEFAULT_SCAN_TIMEOUT: Duration = Duration::from_secs(5);
-pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_SCAN_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 const BLE_SERVICE_UUID: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
 const BLE_RPC_CHARACTERISTIC_UUID: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
 
 #[derive(Debug, Clone)]
-pub struct BleConnectOptions {
-    pub scan_timeout: Duration,
-    pub read_timeout: Duration,
-    pub name_contains: Option<String>,
+struct BleConnectOptions {
+    scan_timeout: Duration,
+    read_timeout: Duration,
+    name_contains: Option<String>,
 }
 
 impl Default for BleConnectOptions {
@@ -36,6 +36,7 @@ impl Default for BleConnectOptions {
     }
 }
 
+/// Errors from BLE transport setup/operation.
 #[derive(Debug)]
 pub enum BleTransportError {
     RuntimeInit(std::io::Error),
@@ -87,6 +88,10 @@ impl From<uuid::Error> for BleTransportError {
     }
 }
 
+/// Blocking BLE transport adapter for [`crate::StudioClient`].
+///
+/// Internally this runs an async worker thread and exposes a blocking
+/// [`Read`] + [`Write`] interface.
 pub struct BleTransport {
     write_tx: UnboundedSender<Vec<u8>>,
     read_rx: Receiver<Vec<u8>>,
@@ -95,11 +100,12 @@ pub struct BleTransport {
 }
 
 impl BleTransport {
+    /// Connects to the first matching BLE peripheral using default options.
     pub fn connect_first() -> Result<Self, BleTransportError> {
         Self::connect_with_options(BleConnectOptions::default())
     }
 
-    pub fn connect_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
+    fn connect_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
         let read_timeout = options.read_timeout;
         let worker_options = options.clone();
         let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();

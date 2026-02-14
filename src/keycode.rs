@@ -1,6 +1,9 @@
 use num_enum::TryFromPrimitive;
 use strum_macros::{AsRefStr, EnumString, IntoStaticStr};
 
+/// ZMK keycode value
+///
+/// This is the primary key type used by typed behavior APIs.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive, AsRefStr, EnumString, IntoStaticStr,
 )]
@@ -572,18 +575,24 @@ pub enum Keycode {
 }
 
 impl Keycode {
+    /// Returns the raw HID usage value as encoded by ZMK.
     pub const fn to_hid_usage(self) -> u32 {
         self as u32
     }
 
+    /// Converts a raw HID usage value into a known [`Keycode`].
+    ///
+    /// Returns `None` when the usage is not present in this enum table.
     pub fn from_hid_usage(encoded: u32) -> Option<Self> {
         Self::try_from(encoded).ok()
     }
 
+    /// Parses a keycode from a ZMK name/alias (for example `"A"` or `"LSHFT"`).
     pub fn from_name(name: &str) -> Option<Self> {
         name.parse().ok()
     }
 
+    /// Returns the canonical static name for this keycode variant.
     pub fn to_name(self) -> &'static str {
         <&'static str>::from(self)
     }

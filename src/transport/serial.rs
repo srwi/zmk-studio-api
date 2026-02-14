@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
 use std::time::Duration;
 
-pub const DEFAULT_BAUD_RATE: u32 = 12_500;
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+const DEFAULT_BAUD_RATE: u32 = 12_500;
+const DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
 pub enum SerialTransportError {
@@ -43,43 +43,13 @@ impl SerialTransport {
         Self::open_with(path, DEFAULT_BAUD_RATE, DEFAULT_TIMEOUT)
     }
 
-    pub fn open_with(
+    fn open_with(
         path: &str,
         baud_rate: u32,
         timeout: Duration,
     ) -> Result<Self, SerialTransportError> {
         let port = serialport::new(path, baud_rate).timeout(timeout).open()?;
         Ok(Self { inner: port })
-    }
-
-    pub fn open_first_matching(
-        baud_rate: u32,
-        timeout: Duration,
-        predicate: impl Fn(&serialport::SerialPortInfo) -> bool,
-    ) -> Result<Self, SerialTransportError> {
-        let ports = serialport::available_ports().map_err(SerialTransportError::Open)?;
-        let selected = ports.into_iter().find(predicate);
-        let Some(port) = selected else {
-            return Err(SerialTransportError::NoMatchingPort);
-        };
-
-        Self::open_with(&port.port_name, baud_rate, timeout)
-    }
-
-    pub fn open_first_usb(
-        vid: u16,
-        pid: u16,
-        baud_rate: u32,
-        timeout: Duration,
-    ) -> Result<Self, SerialTransportError> {
-        Self::open_first_matching(baud_rate, timeout, |info| match &info.port_type {
-            serialport::SerialPortType::UsbPort(usb) => usb.vid == vid && usb.pid == pid,
-            _ => false,
-        })
-    }
-
-    pub fn into_inner(self) -> Box<dyn serialport::SerialPort> {
-        self.inner
     }
 }
 
