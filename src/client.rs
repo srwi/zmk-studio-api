@@ -3,9 +3,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 
-use crate::binding::{BehaviorRole, BindingKind, role_from_display_name};
+use crate::binding::{Behavior, BehaviorRole, role_from_display_name};
 use crate::framing::FrameDecoder;
-use crate::keycode::{KeyCode, is_keyboard_usage};
+use crate::keycode::KeyCode;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
@@ -285,75 +285,12 @@ impl<T: Read + Write> StudioClient<T> {
         }
     }
 
-    /// Typed keymap API: read a keyboard-page key from a specific layer/key position.
-    /// Returns `None` when the binding exists but is not keyboard-page compatible.
+    /// Typed keymap API: read a behavior from a specific layer/key position.
     pub fn get_key_at(
         &mut self,
         layer_id: u32,
         key_position: i32,
-    ) -> Result<Option<KeyCode>, ClientError> {
-        let keymap = self.get_keymap()?;
-        let binding = binding_at(&keymap, layer_id, key_position).ok_or(
-            ClientError::InvalidLayerOrPosition {
-                layer_id,
-                key_position,
-            },
-        )?;
-
-        if is_keyboard_usage(binding.param1) {
-            return Ok(Some(KeyCode::from_hid_usage(binding.param1)));
-        }
-        if is_keyboard_usage(binding.param2) {
-            return Ok(Some(KeyCode::from_hid_usage(binding.param2)));
-        }
-
-        Ok(None)
-    }
-
-    /// Typed keymap API: set a keyboard-page key at a specific layer/key position.
-    /// The existing binding is used as a template so the behavior ID and non-key parameter remain intact.
-    pub fn set_key_at(
-        &mut self,
-        layer_id: u32,
-        key_position: i32,
-        key: KeyCode,
-    ) -> Result<(), ClientError> {
-        let keymap = self.get_keymap()?;
-        let current = binding_at(&keymap, layer_id, key_position).ok_or(
-            ClientError::InvalidLayerOrPosition {
-                layer_id,
-                key_position,
-            },
-        )?;
-
-        let usage = key.to_hid_usage();
-        if !is_keyboard_usage(usage) {
-            return Err(ClientError::BindingNotKeyboardCompatible {
-                layer_id,
-                key_position,
-            });
-        }
-
-        let mut next = current;
-        if is_keyboard_usage(current.param1) {
-            next.param1 = usage;
-        } else if is_keyboard_usage(current.param2) {
-            next.param2 = usage;
-        } else {
-            return Err(ClientError::BindingNotKeyboardCompatible {
-                layer_id,
-                key_position,
-            });
-        }
-
-        self.set_layer_binding(layer_id, key_position, next)
-    }
-
-    pub fn get_binding_kind_at(
-        &mut self,
-        layer_id: u32,
-        key_position: i32,
-    ) -> Result<BindingKind, ClientError> {
+    ) -> Result<Behavior, ClientError> {
         self.ensure_behavior_catalog()?;
 
         let keymap = self.get_keymap()?;
@@ -365,60 +302,56 @@ impl<T: Read + Write> StudioClient<T> {
         )?;
 
         let Some(role) = self.behavior_role_by_id.get(&binding.behavior_id).copied() else {
-            return Ok(BindingKind::Raw(binding));
+            return Ok(Behavior::Raw(binding));
         };
 
-        let kind = match role {
-            BehaviorRole::KeyPress => {
-                BindingKind::KeyPress(KeyCode::from_hid_usage(binding.param1))
-            }
-            BehaviorRole::KeyToggle => {
-                BindingKind::KeyToggle(KeyCode::from_hid_usage(binding.param1))
-            }
-            BehaviorRole::LayerTap => BindingKind::LayerTap {
+        let behavior = match role {
+            BehaviorRole::KeyPress => Behavior::KeyPress(KeyCode::from_hid_usage(binding.param1)),
+            BehaviorRole::KeyToggle => Behavior::KeyToggle(KeyCode::from_hid_usage(binding.param1)),
+            BehaviorRole::LayerTap => Behavior::LayerTap {
                 layer_id: binding.param1,
                 tap: KeyCode::from_hid_usage(binding.param2),
             },
-            BehaviorRole::ModTap => BindingKind::ModTap {
+            BehaviorRole::ModTap => Behavior::ModTap {
                 hold: KeyCode::from_hid_usage(binding.param1),
                 tap: KeyCode::from_hid_usage(binding.param2),
             },
-            BehaviorRole::MomentaryLayer => BindingKind::MomentaryLayer {
+            BehaviorRole::MomentaryLayer => Behavior::MomentaryLayer {
                 layer_id: binding.param1,
             },
-            BehaviorRole::ToggleLayer => BindingKind::ToggleLayer {
+            BehaviorRole::ToggleLayer => Behavior::ToggleLayer {
                 layer_id: binding.param1,
             },
-            BehaviorRole::ToLayer => BindingKind::ToLayer {
+            BehaviorRole::ToLayer => Behavior::ToLayer {
                 layer_id: binding.param1,
             },
-            BehaviorRole::Transparent => BindingKind::Transparent,
-            BehaviorRole::None => BindingKind::None,
+            BehaviorRole::Transparent => Behavior::Transparent,
+            BehaviorRole::None => Behavior::None,
         };
 
-        Ok(kind)
+        Ok(behavior)
     }
 
-    pub fn set_binding_kind_at(
+    /// Typed keymap API: set a behavior at a specific layer/key position.
+    pub fn set_key_at(
         &mut self,
         layer_id: u32,
         key_position: i32,
-        kind: BindingKind,
+        behavior: Behavior,
     ) -> Result<(), ClientError> {
         self.ensure_behavior_catalog()?;
-
-        let binding = match kind {
-            BindingKind::KeyPress(key) => zmk::keymap::BehaviorBinding {
+        let binding = match behavior {
+            Behavior::KeyPress(key) => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::KeyPress, "Key Press")?,
                 param1: key.to_hid_usage(),
                 param2: 0,
             },
-            BindingKind::KeyToggle(key) => zmk::keymap::BehaviorBinding {
+            Behavior::KeyToggle(key) => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::KeyToggle, "Key Toggle")?,
                 param1: key.to_hid_usage(),
                 param2: 0,
             },
-            BindingKind::LayerTap {
+            Behavior::LayerTap {
                 layer_id: hold_layer_id,
                 tap,
             } => zmk::keymap::BehaviorBinding {
@@ -426,12 +359,12 @@ impl<T: Read + Write> StudioClient<T> {
                 param1: hold_layer_id,
                 param2: tap.to_hid_usage(),
             },
-            BindingKind::ModTap { hold, tap } => zmk::keymap::BehaviorBinding {
+            Behavior::ModTap { hold, tap } => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::ModTap, "Mod-Tap")?,
                 param1: hold.to_hid_usage(),
                 param2: tap.to_hid_usage(),
             },
-            BindingKind::MomentaryLayer {
+            Behavior::MomentaryLayer {
                 layer_id: hold_layer_id,
             } => zmk::keymap::BehaviorBinding {
                 behavior_id: self
@@ -439,31 +372,31 @@ impl<T: Read + Write> StudioClient<T> {
                 param1: hold_layer_id,
                 param2: 0,
             },
-            BindingKind::ToggleLayer {
+            Behavior::ToggleLayer {
                 layer_id: target_layer_id,
             } => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::ToggleLayer, "Toggle Layer")?,
                 param1: target_layer_id,
                 param2: 0,
             },
-            BindingKind::ToLayer {
+            Behavior::ToLayer {
                 layer_id: target_layer_id,
             } => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::ToLayer, "To Layer")?,
                 param1: target_layer_id,
                 param2: 0,
             },
-            BindingKind::Transparent => zmk::keymap::BehaviorBinding {
+            Behavior::Transparent => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::Transparent, "Transparent")?,
                 param1: 0,
                 param2: 0,
             },
-            BindingKind::None => zmk::keymap::BehaviorBinding {
+            Behavior::None => zmk::keymap::BehaviorBinding {
                 behavior_id: self.behavior_id_for(BehaviorRole::None, "None")?,
                 param1: 0,
                 param2: 0,
             },
-            BindingKind::Raw(raw) => raw,
+            Behavior::Raw(raw) => raw,
         };
 
         self.set_layer_binding(layer_id, key_position, binding)

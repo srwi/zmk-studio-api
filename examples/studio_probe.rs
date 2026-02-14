@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use zmk_studio_rust_client::binding::BindingKind;
+use zmk_studio_rust_client::binding::Behavior;
 use zmk_studio_rust_client::client::{ClientError, StudioClient};
 use zmk_studio_rust_client::keycode::{self, KeyCode, KeyboardCode};
 use zmk_studio_rust_client::proto::zmk::meta::ErrorConditions;
@@ -111,20 +111,20 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
             }
 
             let keycode = random_letter_key();
-            let current_kind = client.get_binding_kind_at(first_layer.id, 0)?;
+            let current_behavior = client.get_key_at(first_layer.id, 0)?;
             println!(
                 "current first-key binding: {}",
-                binding_kind_summary(&current_kind)
+                behavior_summary(&current_behavior)
             );
 
-            let next_kind = match current_kind {
-                BindingKind::KeyPress(_) => BindingKind::KeyPress(keycode),
-                BindingKind::KeyToggle(_) => BindingKind::KeyToggle(keycode),
-                BindingKind::LayerTap { layer_id, .. } => BindingKind::LayerTap {
+            let next_behavior = match current_behavior {
+                Behavior::KeyPress(_) => Behavior::KeyPress(keycode),
+                Behavior::KeyToggle(_) => Behavior::KeyToggle(keycode),
+                Behavior::LayerTap { layer_id, .. } => Behavior::LayerTap {
                     layer_id,
                     tap: keycode,
                 },
-                BindingKind::ModTap { hold, .. } => BindingKind::ModTap { hold, tap: keycode },
+                Behavior::ModTap { hold, .. } => Behavior::ModTap { hold, tap: keycode },
                 _ => {
                     println!(
                         "first key binding is not one of KeyPress/KeyToggle/LayerTap/ModTap, skipping edit"
@@ -135,12 +135,12 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
 
             let key_name = keycode.to_zmk_name().unwrap_or("UNKNOWN");
             println!("setting random tap key '{key_name}'");
-            client.set_binding_kind_at(first_layer.id, 0, next_kind)?;
+            client.set_key_at(first_layer.id, 0, next_behavior)?;
 
-            let read_kind = client.get_binding_kind_at(first_layer.id, 0)?;
+            let read_behavior = client.get_key_at(first_layer.id, 0)?;
             println!(
                 "read back first-key binding: {}",
-                binding_kind_summary(&read_kind)
+                behavior_summary(&read_behavior)
             );
 
             println!("note: change is not saved; call save_changes() if you want it persisted.");
@@ -199,26 +199,26 @@ fn random_letter_key() -> KeyCode {
     KeyCode::from_hid_usage(LETTERS[idx])
 }
 
-fn binding_kind_summary(kind: &BindingKind) -> String {
-    match kind {
-        BindingKind::KeyPress(k) => format!("KeyPress({})", keycode_summary(*k)),
-        BindingKind::KeyToggle(k) => format!("KeyToggle({})", keycode_summary(*k)),
-        BindingKind::LayerTap { layer_id, tap } => {
+fn behavior_summary(behavior: &Behavior) -> String {
+    match behavior {
+        Behavior::KeyPress(k) => format!("KeyPress({})", keycode_summary(*k)),
+        Behavior::KeyToggle(k) => format!("KeyToggle({})", keycode_summary(*k)),
+        Behavior::LayerTap { layer_id, tap } => {
             format!("LayerTap(layer={layer_id}, tap={})", keycode_summary(*tap))
         }
-        BindingKind::ModTap { hold, tap } => {
+        Behavior::ModTap { hold, tap } => {
             format!(
                 "ModTap(hold={}, tap={})",
                 keycode_summary(*hold),
                 keycode_summary(*tap)
             )
         }
-        BindingKind::MomentaryLayer { layer_id } => format!("MomentaryLayer({layer_id})"),
-        BindingKind::ToggleLayer { layer_id } => format!("ToggleLayer({layer_id})"),
-        BindingKind::ToLayer { layer_id } => format!("ToLayer({layer_id})"),
-        BindingKind::Transparent => "Transparent".to_string(),
-        BindingKind::None => "None".to_string(),
-        BindingKind::Raw(raw) => format!(
+        Behavior::MomentaryLayer { layer_id } => format!("MomentaryLayer({layer_id})"),
+        Behavior::ToggleLayer { layer_id } => format!("ToggleLayer({layer_id})"),
+        Behavior::ToLayer { layer_id } => format!("ToLayer({layer_id})"),
+        Behavior::Transparent => "Transparent".to_string(),
+        Behavior::None => "None".to_string(),
+        Behavior::Raw(raw) => format!(
             "Raw(behavior_id={}, param1={}, param2={})",
             raw.behavior_id, raw.param1, raw.param2
         ),

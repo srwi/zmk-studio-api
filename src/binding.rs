@@ -17,7 +17,7 @@ pub enum BehaviorRole {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum BindingKind {
+pub enum Behavior {
     KeyPress(KeyCode),
     KeyToggle(KeyCode),
     LayerTap { layer_id: u32, tap: KeyCode },
