@@ -34,7 +34,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     return Ok(());
                 };
                 let client = StudioClient::new(SerialTransport::open(&port)?);
-                run_probe(client)
+                run_example(client)
             }
             #[cfg(not(feature = "serial"))]
             {
@@ -46,7 +46,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             {
                 let _name_substring = args.next();
                 let client = StudioClient::new(BleTransport::connect_first()?);
-                run_probe(client)
+                run_example(client)
             }
             #[cfg(not(feature = "ble"))]
             {
@@ -60,7 +60,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn Error>> {
+fn run_example<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn Error>> {
     let info = client.get_device_info()?;
     println!("Device: {}", info.name);
     println!("Lock: {:?}", client.get_lock_state()?);
@@ -118,6 +118,6 @@ fn run_probe<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<dyn
 
 fn print_usage() {
     println!("Usage:");
-    println!("  cargo run --example studio_probe -- serial <PORT>");
-    println!("  cargo run --example studio_probe --features ble -- ble");
+    println!("  cargo run --example basic_example -- serial <PORT>");
+    println!("  cargo run --example basic_example --features ble -- ble");
 }
