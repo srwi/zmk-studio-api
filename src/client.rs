@@ -303,39 +303,67 @@ impl<T: Read + Write> StudioClient<T> {
             },
         )?;
 
+        Ok(self.resolve_binding(&binding))
+    }
+
+    /// Fetches the keymap and resolves every binding into a typed [`Behavior`].
+    ///
+    /// Returns a `Vec` of layers, each layer being a `Vec<Behavior>` matching
+    /// the order of bindings in the keymap. It fetches the keymap once and converts all
+    /// bindings in a single pass.
+    pub fn resolve_keymap(&mut self) -> Result<Vec<Vec<Behavior>>, ClientError> {
+        self.ensure_behavior_catalog()?;
+        let keymap = self.get_keymap()?;
+
+        let layers = keymap
+            .layers
+            .iter()
+            .map(|layer| {
+                layer
+                    .bindings
+                    .iter()
+                    .map(|binding| self.resolve_binding(binding))
+                    .collect()
+            })
+            .collect();
+
+        Ok(layers)
+    }
+
+    fn resolve_binding(&self, binding: &zmk::keymap::BehaviorBinding) -> Behavior {
         let Ok(binding_behavior_id) = u32::try_from(binding.behavior_id) else {
-            return Ok(Behavior::Raw(binding));
+            return Behavior::Raw(*binding);
         };
         let Some(role) = self.behavior_role_by_id.get(&binding_behavior_id).copied() else {
-            return Ok(Behavior::Raw(binding));
+            return Behavior::Raw(*binding);
         };
 
-        let behavior = match role {
+        match role {
             BehaviorRole::KeyPress => match Keycode::from_hid_usage(binding.param1) {
                 Some(key) => Behavior::KeyPress(key),
-                None => Behavior::Raw(binding),
+                None => Behavior::Raw(*binding),
             },
             BehaviorRole::KeyToggle => match Keycode::from_hid_usage(binding.param1) {
                 Some(key) => Behavior::KeyToggle(key),
-                None => Behavior::Raw(binding),
+                None => Behavior::Raw(*binding),
             },
             BehaviorRole::LayerTap => match Keycode::from_hid_usage(binding.param2) {
                 Some(tap) => Behavior::LayerTap {
                     layer_id: binding.param1,
                     tap,
                 },
-                None => Behavior::Raw(binding),
+                None => Behavior::Raw(*binding),
             },
             BehaviorRole::ModTap => match (
                 Keycode::from_hid_usage(binding.param1),
                 Keycode::from_hid_usage(binding.param2),
             ) {
                 (Some(hold), Some(tap)) => Behavior::ModTap { hold, tap },
-                _ => Behavior::Raw(binding),
+                _ => Behavior::Raw(*binding),
             },
             BehaviorRole::StickyKey => match Keycode::from_hid_usage(binding.param1) {
                 Some(key) => Behavior::StickyKey(key),
-                None => Behavior::Raw(binding),
+                None => Behavior::Raw(*binding),
             },
             BehaviorRole::StickyLayer => Behavior::StickyLayer {
                 layer_id: binding.param1,
@@ -385,9 +413,7 @@ impl<T: Read + Write> StudioClient<T> {
             BehaviorRole::GraveEscape => Behavior::GraveEscape,
             BehaviorRole::Transparent => Behavior::Transparent,
             BehaviorRole::None => Behavior::None,
-        };
-
-        Ok(behavior)
+        }
     }
 
     /// Set a behavior at a specific layer/key position.
