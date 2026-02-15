@@ -16,7 +16,6 @@ fn main() {
     let mut config = prost_build::Config::new();
     config.include_file("proto_mod.rs");
     config.protoc_executable(protoc);
-
     config
         .compile_protos(&protos, &["proto/zmk"])
         .expect("failed to compile protobuf definitions");

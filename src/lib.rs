@@ -15,6 +15,8 @@ mod keycode;
 /// Raw generated protobuf types used by the RPC protocol.
 pub mod proto;
 mod protocol;
+#[cfg(feature = "python")]
+mod python;
 /// Transport adapters for connecting to a ZMK Studio-capable device.
 pub mod transport;
 

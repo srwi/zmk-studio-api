@@ -3,10 +3,10 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 
 #[cfg(feature = "ble")]
-use zmk_studio_rust_client::transport::ble::BleTransport;
+use zmk_studio_api::transport::ble::BleTransport;
 #[cfg(feature = "serial")]
-use zmk_studio_rust_client::transport::serial::SerialTransport;
-use zmk_studio_rust_client::{Behavior, ClientError, Keycode, StudioClient};
+use zmk_studio_api::transport::serial::SerialTransport;
+use zmk_studio_api::{Behavior, ClientError, Keycode, StudioClient};
 
 fn main() -> ExitCode {
     match run() {

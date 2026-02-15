@@ -1,11 +1,21 @@
 use num_enum::TryFromPrimitive;
-use strum_macros::{AsRefStr, EnumString, IntoStaticStr};
+use strum_macros::{AsRefStr, EnumIter, EnumString, IntoStaticStr};
 
 /// ZMK keycode value
 ///
 /// This is the primary key type used by typed behavior APIs.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, TryFromPrimitive, AsRefStr, EnumString, IntoStaticStr,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    TryFromPrimitive,
+    AsRefStr,
+    EnumString,
+    IntoStaticStr,
+    EnumIter,
 )]
 #[repr(u32)]
 #[allow(non_camel_case_types)]

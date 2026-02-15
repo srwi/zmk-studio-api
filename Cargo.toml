@@ -1,12 +1,16 @@
 [package]
-name = "zmk-studio-rust-client"
+name = "zmk-studio-api"
 version = "0.1.0"
 edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
 
 [features]
 default = ["serial"]
 serial = ["dep:serialport"]
 ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid"]
+python = ["dep:pyo3"]
 
 [dependencies]
 prost = "0.13"
@@ -18,6 +22,7 @@ btleplug = { version = "0.11", optional = true }
 futures = { version = "0.3", optional = true }
 uuid = { version = "1.11", optional = true }
 tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"], optional = true }
 
 [build-dependencies]
 prost-build = "0.13"
