@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::sync::Mutex;
 
 use prost::Message;
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBytes, PyDict, PyModule};
 use strum::IntoEnumIterator;
@@ -11,12 +11,64 @@ use strum::IntoEnumIterator;
 use crate::transport::ble::BleTransport;
 #[cfg(feature = "serial")]
 use crate::transport::serial::SerialTransport;
-use crate::{Behavior, ClientError, Keycode, StudioClient};
+use crate::{Behavior, ClientError, Keycode, StudioClient, proto::zmk::keymap};
 
 trait ReadWriteSend: Read + Write + Send {}
 impl<T: Read + Write + Send> ReadWriteSend for T {}
 
 type DynClient = StudioClient<Box<dyn ReadWriteSend>>;
+
+#[pyclass(name = "Behavior")]
+#[derive(Clone)]
+pub struct PyBehavior {
+    inner: Behavior,
+}
+
+impl PyBehavior {
+    fn new(inner: Behavior) -> Self {
+        Self { inner }
+    }
+}
+
+#[pymethods]
+impl PyBehavior {
+    #[getter]
+    pub fn kind(&self) -> &'static str {
+        match self.inner {
+            Behavior::KeyPress(_) => "KeyPress",
+            Behavior::KeyToggle(_) => "KeyToggle",
+            Behavior::LayerTap { .. } => "LayerTap",
+            Behavior::ModTap { .. } => "ModTap",
+            Behavior::StickyKey(_) => "StickyKey",
+            Behavior::StickyLayer { .. } => "StickyLayer",
+            Behavior::MomentaryLayer { .. } => "MomentaryLayer",
+            Behavior::ToggleLayer { .. } => "ToggleLayer",
+            Behavior::ToLayer { .. } => "ToLayer",
+            Behavior::Bluetooth { .. } => "Bluetooth",
+            Behavior::ExternalPower { .. } => "ExternalPower",
+            Behavior::OutputSelection { .. } => "OutputSelection",
+            Behavior::Backlight { .. } => "Backlight",
+            Behavior::Underglow { .. } => "Underglow",
+            Behavior::MouseKeyPress { .. } => "MouseKeyPress",
+            Behavior::MouseMove { .. } => "MouseMove",
+            Behavior::MouseScroll { .. } => "MouseScroll",
+            Behavior::CapsWord => "CapsWord",
+            Behavior::KeyRepeat => "KeyRepeat",
+            Behavior::Reset => "Reset",
+            Behavior::Bootloader => "Bootloader",
+            Behavior::SoftOff => "SoftOff",
+            Behavior::StudioUnlock => "StudioUnlock",
+            Behavior::GraveEscape => "GraveEscape",
+            Behavior::Transparent => "Transparent",
+            Behavior::None => "None",
+            Behavior::Raw(_) => "Raw",
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Behavior({:?})", self.inner)
+    }
+}
 
 #[pyclass(name = "StudioClient")]
 pub struct PyStudioClient {
@@ -103,24 +155,18 @@ impl PyStudioClient {
         Ok(PyBytes::new(py, &layouts.encode_to_vec()))
     }
 
-    pub fn get_key_at<'py>(
-        &self,
-        py: Python<'py>,
-        layer_id: u32,
-        key_position: i32,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    pub fn get_key_at(&self, layer_id: u32, key_position: i32) -> PyResult<PyBehavior> {
         let behavior = self.with_client(|client| client.get_key_at(layer_id, key_position))?;
-        behavior.to_python(py)
+        Ok(PyBehavior::new(behavior))
     }
 
     pub fn set_key_at(
         &self,
         layer_id: u32,
         key_position: i32,
-        behavior: &Bound<'_, PyAny>,
+        behavior: PyBehavior,
     ) -> PyResult<()> {
-        let parsed = Behavior::from_python(behavior)?;
-        self.with_client(|client| client.set_key_at(layer_id, key_position, parsed))
+        self.with_client(|client| client.set_key_at(layer_id, key_position, behavior.inner))
     }
 
     pub fn check_unsaved_changes(&self) -> PyResult<bool> {
@@ -149,9 +195,172 @@ impl PyStudioClient {
     }
 }
 
+fn parse_keycode(value: &Bound<'_, PyAny>) -> PyResult<Keycode> {
+    if let Ok(encoded) = value.extract::<u32>() {
+        return Keycode::from_hid_usage(encoded).ok_or_else(|| {
+            PyValueError::new_err(format!("invalid keycode HID usage value: {encoded}"))
+        });
+    }
+
+    if let Ok(name) = value.extract::<String>() {
+        return Keycode::from_name(&name)
+            .ok_or_else(|| PyValueError::new_err(format!("invalid keycode name: {name}")));
+    }
+
+    Err(PyTypeError::new_err(
+        "key must be a Keycode/int or keycode name string",
+    ))
+}
+
+#[pyfunction(name = "KeyPress")]
+fn key_press(key: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
+    Ok(PyBehavior::new(Behavior::KeyPress(parse_keycode(key)?)))
+}
+
+#[pyfunction(name = "KeyToggle")]
+fn key_toggle(key: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
+    Ok(PyBehavior::new(Behavior::KeyToggle(parse_keycode(key)?)))
+}
+
+#[pyfunction(name = "LayerTap")]
+fn layer_tap(layer_id: u32, tap: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
+    Ok(PyBehavior::new(Behavior::LayerTap {
+        layer_id,
+        tap: parse_keycode(tap)?,
+    }))
+}
+
+#[pyfunction(name = "ModTap")]
+fn mod_tap(hold: &Bound<'_, PyAny>, tap: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
+    Ok(PyBehavior::new(Behavior::ModTap {
+        hold: parse_keycode(hold)?,
+        tap: parse_keycode(tap)?,
+    }))
+}
+
+#[pyfunction(name = "StickyKey")]
+fn sticky_key(key: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
+    Ok(PyBehavior::new(Behavior::StickyKey(parse_keycode(key)?)))
+}
+
+#[pyfunction(name = "StickyLayer")]
+fn sticky_layer(layer_id: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::StickyLayer { layer_id })
+}
+
+#[pyfunction(name = "MomentaryLayer")]
+fn momentary_layer(layer_id: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::MomentaryLayer { layer_id })
+}
+
+#[pyfunction(name = "ToggleLayer")]
+fn toggle_layer(layer_id: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::ToggleLayer { layer_id })
+}
+
+#[pyfunction(name = "ToLayer")]
+fn to_layer(layer_id: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::ToLayer { layer_id })
+}
+
+#[pyfunction(name = "Bluetooth")]
+fn bluetooth(command: u32, value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::Bluetooth { command, value })
+}
+
+#[pyfunction(name = "ExternalPower")]
+fn external_power(value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::ExternalPower { value })
+}
+
+#[pyfunction(name = "OutputSelection")]
+fn output_selection(value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::OutputSelection { value })
+}
+
+#[pyfunction(name = "Backlight")]
+fn backlight(command: u32, value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::Backlight { command, value })
+}
+
+#[pyfunction(name = "Underglow")]
+fn underglow(command: u32, value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::Underglow { command, value })
+}
+
+#[pyfunction(name = "MouseKeyPress")]
+fn mouse_key_press(value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::MouseKeyPress { value })
+}
+
+#[pyfunction(name = "MouseMove")]
+fn mouse_move(value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::MouseMove { value })
+}
+
+#[pyfunction(name = "MouseScroll")]
+fn mouse_scroll(value: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::MouseScroll { value })
+}
+
+#[pyfunction(name = "CapsWord")]
+fn caps_word() -> PyBehavior {
+    PyBehavior::new(Behavior::CapsWord)
+}
+
+#[pyfunction(name = "KeyRepeat")]
+fn key_repeat() -> PyBehavior {
+    PyBehavior::new(Behavior::KeyRepeat)
+}
+
+#[pyfunction(name = "Reset")]
+fn reset() -> PyBehavior {
+    PyBehavior::new(Behavior::Reset)
+}
+
+#[pyfunction(name = "Bootloader")]
+fn bootloader() -> PyBehavior {
+    PyBehavior::new(Behavior::Bootloader)
+}
+
+#[pyfunction(name = "SoftOff")]
+fn soft_off() -> PyBehavior {
+    PyBehavior::new(Behavior::SoftOff)
+}
+
+#[pyfunction(name = "StudioUnlock")]
+fn studio_unlock() -> PyBehavior {
+    PyBehavior::new(Behavior::StudioUnlock)
+}
+
+#[pyfunction(name = "GraveEscape")]
+fn grave_escape() -> PyBehavior {
+    PyBehavior::new(Behavior::GraveEscape)
+}
+
+#[pyfunction(name = "Transparent")]
+fn transparent() -> PyBehavior {
+    PyBehavior::new(Behavior::Transparent)
+}
+
+#[pyfunction(name = "NoBehavior")]
+fn no_behavior() -> PyBehavior {
+    PyBehavior::new(Behavior::None)
+}
+
+#[pyfunction(name = "Raw")]
+fn raw(behavior_id: i32, param1: u32, param2: u32) -> PyBehavior {
+    PyBehavior::new(Behavior::Raw(keymap::BehaviorBinding {
+        behavior_id,
+        param1,
+        param2,
+    }))
+}
+
 #[pymodule]
 fn zmk_studio_api(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyStudioClient>()?;
+    module.add_class::<PyBehavior>()?;
 
     let enum_module = py.import("enum")?;
     let int_enum = enum_module.getattr("IntEnum")?;
@@ -161,6 +370,34 @@ fn zmk_studio_api(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> 
     }
     let keycode_enum = int_enum.call1(("Keycode", members))?;
     module.add("Keycode", keycode_enum)?;
+
+    module.add_function(wrap_pyfunction!(key_press, module)?)?;
+    module.add_function(wrap_pyfunction!(key_toggle, module)?)?;
+    module.add_function(wrap_pyfunction!(layer_tap, module)?)?;
+    module.add_function(wrap_pyfunction!(mod_tap, module)?)?;
+    module.add_function(wrap_pyfunction!(sticky_key, module)?)?;
+    module.add_function(wrap_pyfunction!(sticky_layer, module)?)?;
+    module.add_function(wrap_pyfunction!(momentary_layer, module)?)?;
+    module.add_function(wrap_pyfunction!(toggle_layer, module)?)?;
+    module.add_function(wrap_pyfunction!(to_layer, module)?)?;
+    module.add_function(wrap_pyfunction!(bluetooth, module)?)?;
+    module.add_function(wrap_pyfunction!(external_power, module)?)?;
+    module.add_function(wrap_pyfunction!(output_selection, module)?)?;
+    module.add_function(wrap_pyfunction!(backlight, module)?)?;
+    module.add_function(wrap_pyfunction!(underglow, module)?)?;
+    module.add_function(wrap_pyfunction!(mouse_key_press, module)?)?;
+    module.add_function(wrap_pyfunction!(mouse_move, module)?)?;
+    module.add_function(wrap_pyfunction!(mouse_scroll, module)?)?;
+    module.add_function(wrap_pyfunction!(caps_word, module)?)?;
+    module.add_function(wrap_pyfunction!(key_repeat, module)?)?;
+    module.add_function(wrap_pyfunction!(reset, module)?)?;
+    module.add_function(wrap_pyfunction!(bootloader, module)?)?;
+    module.add_function(wrap_pyfunction!(soft_off, module)?)?;
+    module.add_function(wrap_pyfunction!(studio_unlock, module)?)?;
+    module.add_function(wrap_pyfunction!(grave_escape, module)?)?;
+    module.add_function(wrap_pyfunction!(transparent, module)?)?;
+    module.add_function(wrap_pyfunction!(no_behavior, module)?)?;
+    module.add_function(wrap_pyfunction!(raw, module)?)?;
 
     Ok(())
 }

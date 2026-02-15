@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any
-
 import zmk_studio_api as zmk
 
 
@@ -23,11 +21,11 @@ def run(client: zmk.StudioClient) -> None:
     print("Physical layouts bytes:", len(layouts_bytes))
 
     # Demonstrate typed behavior get/set at (layer 0, position 0).
-    before: dict[str, Any] = client.get_key_at(0, 0)
+    before = client.get_key_at(0, 0)
     print("Before:", before)
 
-    client.set_key_at(0, 0, {"kind": "key_press", "key": zmk.Keycode.A})
-    after: dict[str, Any] = client.get_key_at(0, 0)
+    client.set_key_at(0, 0, zmk.KeyPress(zmk.Keycode.A))
+    after = client.get_key_at(0, 0)
     print("After:", after)
 
     # Avoid persisting the example mutation.
