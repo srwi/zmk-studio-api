@@ -11,7 +11,7 @@ use strum::IntoEnumIterator;
 use crate::transport::ble::BleTransport;
 #[cfg(feature = "serial")]
 use crate::transport::serial::SerialTransport;
-use crate::{Behavior, ClientError, Keycode, StudioClient, proto::zmk::keymap};
+use crate::{Behavior, ClientError, HidUsage, Keycode, StudioClient};
 
 trait ReadWriteSend: Read + Write + Send {}
 impl<T: Read + Write + Send> ReadWriteSend for T {}
@@ -61,7 +61,7 @@ impl PyBehavior {
             Behavior::GraveEscape => "GraveEscape",
             Behavior::Transparent => "Transparent",
             Behavior::None => "None",
-            Behavior::Raw(_) => "Raw",
+            Behavior::Unknown { .. } => "Unknown",
         }
     }
 
@@ -195,16 +195,15 @@ impl PyStudioClient {
     }
 }
 
-fn parse_keycode(value: &Bound<'_, PyAny>) -> PyResult<Keycode> {
+fn parse_hid_usage(value: &Bound<'_, PyAny>) -> PyResult<HidUsage> {
     if let Ok(encoded) = value.extract::<u32>() {
-        return Keycode::from_hid_usage(encoded).ok_or_else(|| {
-            PyValueError::new_err(format!("invalid keycode HID usage value: {encoded}"))
-        });
+        return Ok(HidUsage::from_encoded(encoded));
     }
 
     if let Ok(name) = value.extract::<String>() {
-        return Keycode::from_name(&name)
-            .ok_or_else(|| PyValueError::new_err(format!("invalid keycode name: {name}")));
+        let keycode = Keycode::from_name(&name)
+            .ok_or_else(|| PyValueError::new_err(format!("invalid keycode name: {name}")))?;
+        return Ok(HidUsage::from_encoded(keycode.to_hid_usage()));
     }
 
     Err(PyTypeError::new_err(
@@ -214,33 +213,33 @@ fn parse_keycode(value: &Bound<'_, PyAny>) -> PyResult<Keycode> {
 
 #[pyfunction(name = "KeyPress")]
 fn key_press(key: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
-    Ok(PyBehavior::new(Behavior::KeyPress(parse_keycode(key)?)))
+    Ok(PyBehavior::new(Behavior::KeyPress(parse_hid_usage(key)?)))
 }
 
 #[pyfunction(name = "KeyToggle")]
 fn key_toggle(key: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
-    Ok(PyBehavior::new(Behavior::KeyToggle(parse_keycode(key)?)))
+    Ok(PyBehavior::new(Behavior::KeyToggle(parse_hid_usage(key)?)))
 }
 
 #[pyfunction(name = "LayerTap")]
 fn layer_tap(layer_id: u32, tap: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
     Ok(PyBehavior::new(Behavior::LayerTap {
         layer_id,
-        tap: parse_keycode(tap)?,
+        tap: parse_hid_usage(tap)?,
     }))
 }
 
 #[pyfunction(name = "ModTap")]
 fn mod_tap(hold: &Bound<'_, PyAny>, tap: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
     Ok(PyBehavior::new(Behavior::ModTap {
-        hold: parse_keycode(hold)?,
-        tap: parse_keycode(tap)?,
+        hold: parse_hid_usage(hold)?,
+        tap: parse_hid_usage(tap)?,
     }))
 }
 
 #[pyfunction(name = "StickyKey")]
 fn sticky_key(key: &Bound<'_, PyAny>) -> PyResult<PyBehavior> {
-    Ok(PyBehavior::new(Behavior::StickyKey(parse_keycode(key)?)))
+    Ok(PyBehavior::new(Behavior::StickyKey(parse_hid_usage(key)?)))
 }
 
 #[pyfunction(name = "StickyLayer")]
@@ -350,11 +349,11 @@ fn no_behavior() -> PyBehavior {
 
 #[pyfunction(name = "Raw")]
 fn raw(behavior_id: i32, param1: u32, param2: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::Raw(keymap::BehaviorBinding {
+    PyBehavior::new(Behavior::Unknown {
         behavior_id,
         param1,
         param2,
-    }))
+    })
 }
 
 #[pymodule]

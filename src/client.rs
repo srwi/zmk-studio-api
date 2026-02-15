@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 
 use crate::binding::{Behavior, BehaviorRole, role_from_display_name};
 use crate::framing::FrameDecoder;
-use crate::keycode::Keycode;
+use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
@@ -332,39 +332,32 @@ impl<T: Read + Write> StudioClient<T> {
 
     fn resolve_binding(&self, binding: &zmk::keymap::BehaviorBinding) -> Behavior {
         let Ok(binding_behavior_id) = u32::try_from(binding.behavior_id) else {
-            return Behavior::Raw(*binding);
+            return Behavior::Unknown {
+                behavior_id: binding.behavior_id,
+                param1: binding.param1,
+                param2: binding.param2,
+            };
         };
         let Some(role) = self.behavior_role_by_id.get(&binding_behavior_id).copied() else {
-            return Behavior::Raw(*binding);
+            return Behavior::Unknown {
+                behavior_id: binding.behavior_id,
+                param1: binding.param1,
+                param2: binding.param2,
+            };
         };
 
         match role {
-            BehaviorRole::KeyPress => match Keycode::from_hid_usage(binding.param1) {
-                Some(key) => Behavior::KeyPress(key),
-                None => Behavior::Raw(*binding),
+            BehaviorRole::KeyPress => Behavior::KeyPress(HidUsage::from_encoded(binding.param1)),
+            BehaviorRole::KeyToggle => Behavior::KeyToggle(HidUsage::from_encoded(binding.param1)),
+            BehaviorRole::LayerTap => Behavior::LayerTap {
+                layer_id: binding.param1,
+                tap: HidUsage::from_encoded(binding.param2),
             },
-            BehaviorRole::KeyToggle => match Keycode::from_hid_usage(binding.param1) {
-                Some(key) => Behavior::KeyToggle(key),
-                None => Behavior::Raw(*binding),
+            BehaviorRole::ModTap => Behavior::ModTap {
+                hold: HidUsage::from_encoded(binding.param1),
+                tap: HidUsage::from_encoded(binding.param2),
             },
-            BehaviorRole::LayerTap => match Keycode::from_hid_usage(binding.param2) {
-                Some(tap) => Behavior::LayerTap {
-                    layer_id: binding.param1,
-                    tap,
-                },
-                None => Behavior::Raw(*binding),
-            },
-            BehaviorRole::ModTap => match (
-                Keycode::from_hid_usage(binding.param1),
-                Keycode::from_hid_usage(binding.param2),
-            ) {
-                (Some(hold), Some(tap)) => Behavior::ModTap { hold, tap },
-                _ => Behavior::Raw(*binding),
-            },
-            BehaviorRole::StickyKey => match Keycode::from_hid_usage(binding.param1) {
-                Some(key) => Behavior::StickyKey(key),
-                None => Behavior::Raw(*binding),
-            },
+            BehaviorRole::StickyKey => Behavior::StickyKey(HidUsage::from_encoded(binding.param1)),
             BehaviorRole::StickyLayer => Behavior::StickyLayer {
                 layer_id: binding.param1,
             },
@@ -571,7 +564,15 @@ impl<T: Read + Write> StudioClient<T> {
                 param1: 0,
                 param2: 0,
             },
-            Behavior::Raw(raw) => raw,
+            Behavior::Unknown {
+                behavior_id,
+                param1,
+                param2,
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id,
+                param1,
+                param2,
+            },
         };
 
         self.set_layer_binding(layer_id, key_position, binding)

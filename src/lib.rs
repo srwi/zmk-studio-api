@@ -3,7 +3,7 @@
 //! The recommended API surface is:
 //! - [`StudioClient`] for RPC operations
 //! - [`Behavior`] for typed key bindings
-//! - [`Keycode`] for ZMK key values
+//! - [`HidUsage`] and [`Keycode`] for ZMK key values
 //! - [`transport`] for BLE/serial I/O adapters
 //!
 //! [`proto`] exposes raw generated protobuf types for advanced use cases.
@@ -11,6 +11,7 @@
 mod binding;
 mod client;
 mod framing;
+mod hid_usage;
 mod keycode;
 /// Raw generated protobuf types used by the RPC protocol.
 pub mod proto;
@@ -24,5 +25,10 @@ pub mod transport;
 pub use binding::Behavior;
 /// Errors returned by high-level client operations.
 pub use client::{ClientError, StudioClient};
+/// Decoded ZMK HID usage values used in typed behavior APIs.
+pub use hid_usage::{
+    HID_USAGE_KEYBOARD, HidUsage, MOD_LALT, MOD_LCTL, MOD_LGUI, MOD_LSFT, MOD_RALT, MOD_RCTL,
+    MOD_RGUI, MOD_RSFT,
+};
 /// ZMK keycode enum used in typed behavior APIs.
 pub use keycode::Keycode;

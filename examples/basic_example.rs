@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use zmk_studio_api::transport::ble::BleTransport;
 #[cfg(feature = "serial")]
 use zmk_studio_api::transport::serial::SerialTransport;
-use zmk_studio_api::{Behavior, ClientError, Keycode, StudioClient};
+use zmk_studio_api::{Behavior, ClientError, HidUsage, Keycode, StudioClient};
 
 fn main() -> ExitCode {
     match run() {
@@ -102,7 +102,11 @@ fn run_example<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<d
     let before = client.get_key_at(layer_id, key_position)?;
     println!("Before: {before:?}");
 
-    client.set_key_at(layer_id, key_position, Behavior::KeyPress(Keycode::A))?;
+    client.set_key_at(
+        layer_id,
+        key_position,
+        Behavior::KeyPress(HidUsage::from_encoded(Keycode::A.to_hid_usage())),
+    )?;
     let after = client.get_key_at(layer_id, key_position)?;
     println!("After:  {after:?}");
 
