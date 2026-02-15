@@ -103,14 +103,13 @@ pub enum Behavior {
 }
 
 pub fn role_from_display_name(name: &str) -> Option<BehaviorRole> {
-    let n = normalize_behavior_name(name);
+    let n = name.trim().to_ascii_lowercase();
     match n.as_str() {
+        // Explicit display-name values from zmk-main/app/dts/behaviors/*.dtsi
         "key press" => Some(BehaviorRole::KeyPress),
         "key toggle" => Some(BehaviorRole::KeyToggle),
         "layer-tap" => Some(BehaviorRole::LayerTap),
-        "layer tap" => Some(BehaviorRole::LayerTap),
         "mod-tap" => Some(BehaviorRole::ModTap),
-        "mod tap" => Some(BehaviorRole::ModTap),
         "sticky key" => Some(BehaviorRole::StickyKey),
         "sticky layer" => Some(BehaviorRole::StickyLayer),
         "momentary layer" => Some(BehaviorRole::MomentaryLayer),
@@ -122,43 +121,18 @@ pub fn role_from_display_name(name: &str) -> Option<BehaviorRole> {
         "backlight" => Some(BehaviorRole::Backlight),
         "underglow" => Some(BehaviorRole::Underglow),
         "mouse key press" => Some(BehaviorRole::MouseKeyPress),
-        "mouse move" => Some(BehaviorRole::MouseMove),
-        "mouse scroll" => Some(BehaviorRole::MouseScroll),
         "caps word" => Some(BehaviorRole::CapsWord),
         "key repeat" => Some(BehaviorRole::KeyRepeat),
         "reset" => Some(BehaviorRole::Reset),
         "bootloader" => Some(BehaviorRole::Bootloader),
-        "soft_off" => Some(BehaviorRole::SoftOff),
-        "soft off" => Some(BehaviorRole::SoftOff),
-        "z so off" => Some(BehaviorRole::SoftOff),
-        "studio_unlock" => Some(BehaviorRole::StudioUnlock),
         "studio unlock" => Some(BehaviorRole::StudioUnlock),
         "grave/escape" => Some(BehaviorRole::GraveEscape),
-        "grave_escape" => Some(BehaviorRole::GraveEscape),
-        "grave escape" => Some(BehaviorRole::GraveEscape),
         "transparent" => Some(BehaviorRole::Transparent),
         "none" => Some(BehaviorRole::None),
+        // Behaviors without display-name that use DEVICE_DT_NAME(node_id)
+        "mouse_move" => Some(BehaviorRole::MouseMove),
+        "mouse_scroll" => Some(BehaviorRole::MouseScroll),
+        "z_so_off" => Some(BehaviorRole::SoftOff),
         _ => None,
     }
-}
-
-fn normalize_behavior_name(name: &str) -> String {
-    let mut out = String::new();
-    let mut in_space = true;
-
-    for ch in name.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-            in_space = false;
-        } else if !in_space {
-            out.push(' ');
-            in_space = true;
-        }
-    }
-
-    if out.ends_with(' ') {
-        out.pop();
-    }
-
-    out
 }

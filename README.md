@@ -21,7 +21,7 @@ cargo add zmk-studio-api [--features ble]
 Usage example:
 
 ```rust
-use zmk_studio_api::{Behavior, Keycode, StudioClient, transport::serial::SerialTransport};
+use zmk_studio_api::{Behavior, HidUsage, Keycode, StudioClient, transport::serial::SerialTransport};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = StudioClient::new(SerialTransport::open("COM3")?);
@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let before = client.get_key_at(0, 12)?;
     println!("Before: {before:?}");
 
-    client.set_key_at(0, 12, Behavior::KeyPress(Keycode::A))?;
+    client.set_key_at(0, 12, Behavior::KeyPress(HidUsage::from_encoded(Keycode::A.to_hid_usage())))?;
     let after = client.get_key_at(0, 12)?;
     println!("After: {after:?}");
 
