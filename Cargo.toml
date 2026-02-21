@@ -5,7 +5,7 @@ description = "Rust + Python client for the ZMK Studio RPC API (Serial + BLE)"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/zmk-studio-api"
 readme = "README.md"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 
 [lib]
@@ -18,17 +18,17 @@ ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid"]
 python = ["dep:pyo3"]
 
 [dependencies]
-prost = "0.13"
+prost = "0.14.3"
 num_enum = "0.7"
-strum = "0.26"
-strum_macros = "0.26"
+strum = "0.27.2"
+strum_macros = "0.27.2"
 serialport = { version = "4.8", optional = true }
 btleplug = { version = "0.11", optional = true }
-futures = { version = "0.3", optional = true }
+futures = { version = "0.3.32", optional = true }
 uuid = { version = "1.11", optional = true }
 tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
-pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"], optional = true }
+pyo3 = { version = "0.28.2", features = ["extension-module", "abi3-py39"], optional = true }
 
 [build-dependencies]
-prost-build = "0.13"
+prost-build = "0.14.3"
 protoc-bin-vendored = "3"

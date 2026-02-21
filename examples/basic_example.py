@@ -41,14 +41,15 @@ def main() -> int:
     serial = sub.add_parser("serial", help="Connect over serial")
     serial.add_argument("port", help="Serial port path (for example COM3)")
 
-    sub.add_parser("ble", help="Connect over BLE")
+    ble = sub.add_parser("ble", help="Connect over BLE")
+    ble.add_argument("device_id", help="BLE device id from discovery")
 
     args = parser.parse_args()
 
     if args.transport == "serial":
         client = zmk.StudioClient.open_serial(args.port)
     else:
-        client = zmk.StudioClient.connect_ble()
+        client = zmk.StudioClient.open_ble(args.device_id)
 
     run(client)
     return 0

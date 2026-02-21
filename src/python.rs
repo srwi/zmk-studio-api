@@ -98,8 +98,8 @@ impl PyStudioClient {
 
     #[staticmethod]
     #[cfg(feature = "ble")]
-    pub fn connect_ble() -> PyResult<Self> {
-        let transport = BleTransport::connect_first().map_err(|err| {
+    pub fn open_ble(device_id: &str) -> PyResult<Self> {
+        let transport = BleTransport::connect_device(device_id).map_err(|err| {
             PyRuntimeError::new_err(format!("failed to connect BLE transport: {err}"))
         })?;
         Ok(Self {
@@ -109,7 +109,7 @@ impl PyStudioClient {
 
     #[staticmethod]
     #[cfg(not(feature = "ble"))]
-    pub fn connect_ble() -> PyResult<Self> {
+    pub fn open_ble(_device_id: &str) -> PyResult<Self> {
         Err(PyRuntimeError::new_err(
             "ble support is disabled for this build",
         ))

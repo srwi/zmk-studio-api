@@ -8,7 +8,7 @@ use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
 #[cfg(feature = "ble")]
-use crate::transport::ble::{BleTransport, BleTransportError};
+use crate::transport::ble::{BleDeviceInfo, BleTransport, BleTransportError};
 #[cfg(feature = "serial")]
 use crate::transport::serial::{SerialTransport, SerialTransportError};
 
@@ -962,8 +962,13 @@ impl StudioClient<SerialTransport> {
 
 #[cfg(feature = "ble")]
 impl StudioClient<BleTransport> {
-    /// Convenience constructor for connecting to the first matching BLE device.
-    pub fn connect_ble() -> Result<Self, BleTransportError> {
-        Ok(Self::new(BleTransport::connect_first()?))
+    /// Lists discoverable ZMK Studio BLE devices.
+    pub fn list_ble_devices() -> Result<Vec<BleDeviceInfo>, BleTransportError> {
+        crate::transport::ble::discover_devices()
+    }
+
+    /// Convenience constructor for opening a deterministic BLE transport by device ID.
+    pub fn open_ble(device_id: &str) -> Result<Self, BleTransportError> {
+        Ok(Self::new(BleTransport::connect_device(device_id)?))
     }
 }

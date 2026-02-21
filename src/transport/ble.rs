@@ -20,18 +20,47 @@ const BLE_SERVICE_UUID: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
 const BLE_RPC_CHARACTERISTIC_UUID: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
 
 #[derive(Debug, Clone)]
-struct BleConnectOptions {
+struct BleScanOptions {
     scan_timeout: Duration,
-    read_timeout: Duration,
-    name_contains: Option<String>,
 }
 
-impl Default for BleConnectOptions {
+impl Default for BleScanOptions {
     fn default() -> Self {
         Self {
             scan_timeout: DEFAULT_SCAN_TIMEOUT,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BleConnectOptions {
+    scan_timeout: Duration,
+    read_timeout: Duration,
+    device_id: String,
+}
+
+impl BleConnectOptions {
+    fn new(device_id: &str) -> Self {
+        Self {
+            scan_timeout: DEFAULT_SCAN_TIMEOUT,
             read_timeout: DEFAULT_READ_TIMEOUT,
-            name_contains: None,
+            device_id: device_id.to_string(),
+        }
+    }
+}
+
+/// A discoverable ZMK Studio BLE device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BleDeviceInfo {
+    pub device_id: String,
+    pub local_name: Option<String>,
+}
+
+impl BleDeviceInfo {
+    pub fn display_name(&self) -> String {
+        match &self.local_name {
+            Some(name) if !name.is_empty() => format!("{} [{}]", name, self.device_id),
+            _ => self.device_id.clone(),
         }
     }
 }
@@ -43,7 +72,7 @@ pub enum BleTransportError {
     Btleplug(btleplug::Error),
     Uuid(uuid::Error),
     NoAdapter,
-    NoMatchingPeripheral,
+    DeviceNotFound(String),
     MissingRpcCharacteristic,
     SetupChannelClosed,
 }
@@ -55,7 +84,9 @@ impl std::fmt::Display for BleTransportError {
             Self::Btleplug(err) => write!(f, "BLE error: {err}"),
             Self::Uuid(err) => write!(f, "UUID parse error: {err}"),
             Self::NoAdapter => write!(f, "No Bluetooth adapter available"),
-            Self::NoMatchingPeripheral => write!(f, "No matching ZMK Studio peripheral found"),
+            Self::DeviceNotFound(device_id) => {
+                write!(f, "BLE device not found for id: {device_id}")
+            }
             Self::MissingRpcCharacteristic => write!(f, "ZMK Studio RPC characteristic not found"),
             Self::SetupChannelClosed => write!(f, "BLE worker initialization channel closed"),
         }
@@ -69,7 +100,7 @@ impl std::error::Error for BleTransportError {
             Self::Btleplug(err) => Some(err),
             Self::Uuid(err) => Some(err),
             Self::NoAdapter
-            | Self::NoMatchingPeripheral
+            | Self::DeviceNotFound(_)
             | Self::MissingRpcCharacteristic
             | Self::SetupChannelClosed => None,
         }
@@ -88,6 +119,11 @@ impl From<uuid::Error> for BleTransportError {
     }
 }
 
+/// Discover ZMK Studio-capable BLE peripherals.
+pub fn discover_devices() -> Result<Vec<BleDeviceInfo>, BleTransportError> {
+    discover_devices_with_options(BleScanOptions::default())
+}
+
 /// Blocking BLE transport adapter for [`crate::StudioClient`].
 ///
 /// Internally this runs an async worker thread and exposes a blocking
@@ -100,9 +136,9 @@ pub struct BleTransport {
 }
 
 impl BleTransport {
-    /// Connects to the first matching BLE peripheral using default options.
-    pub fn connect_first() -> Result<Self, BleTransportError> {
-        Self::connect_with_options(BleConnectOptions::default())
+    /// Connects to a specific BLE peripheral using a deterministic device ID.
+    pub fn connect_device(device_id: &str) -> Result<Self, BleTransportError> {
+        Self::connect_with_options(BleConnectOptions::new(device_id))
     }
 
     fn connect_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
@@ -189,6 +225,53 @@ impl Write for BleTransport {
     }
 }
 
+fn discover_devices_with_options(
+    options: BleScanOptions,
+) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
+    let runtime = Runtime::new().map_err(BleTransportError::RuntimeInit)?;
+    runtime.block_on(discover_devices_async(options))
+}
+
+async fn discover_devices_async(
+    options: BleScanOptions,
+) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
+    let service_uuid = Uuid::parse_str(BLE_SERVICE_UUID)?;
+
+    let manager = Manager::new().await?;
+    let adapters = manager.adapters().await?;
+    let adapter = adapters
+        .into_iter()
+        .next()
+        .ok_or(BleTransportError::NoAdapter)?;
+
+    adapter
+        .start_scan(ScanFilter {
+            services: vec![service_uuid],
+        })
+        .await?;
+    tokio::time::sleep(options.scan_timeout).await;
+
+    let peripherals = adapter.peripherals().await?;
+    let mut devices = Vec::new();
+
+    for peripheral in peripherals {
+        let Some(props) = peripheral.properties().await? else {
+            continue;
+        };
+
+        if !props.services.contains(&service_uuid) {
+            continue;
+        }
+
+        devices.push(BleDeviceInfo {
+            device_id: peripheral.id().to_string(),
+            local_name: props.local_name,
+        });
+    }
+
+    Ok(devices)
+}
+
 async fn run_ble_worker(
     mut write_rx: UnboundedReceiver<Vec<u8>>,
     read_tx: mpsc::Sender<Vec<u8>>,
@@ -264,7 +347,7 @@ async fn connect_peripheral(
         .await?;
     tokio::time::sleep(options.scan_timeout).await;
 
-    let peripheral = select_peripheral(&adapter, service_uuid, options).await?;
+    let peripheral = select_peripheral(&adapter, service_uuid, &options.device_id).await?;
     peripheral.connect().await?;
     peripheral.discover_services().await?;
 
@@ -289,10 +372,14 @@ async fn connect_peripheral(
 async fn select_peripheral(
     adapter: &Adapter,
     service_uuid: Uuid,
-    options: &BleConnectOptions,
+    device_id: &str,
 ) -> Result<Peripheral, BleTransportError> {
     let peripherals = adapter.peripherals().await?;
     for peripheral in peripherals {
+        if peripheral.id().to_string() != device_id {
+            continue;
+        }
+
         let Some(props) = peripheral.properties().await? else {
             continue;
         };
@@ -301,17 +388,8 @@ async fn select_peripheral(
             continue;
         }
 
-        if let Some(needle) = &options.name_contains {
-            let Some(local_name) = props.local_name.as_deref() else {
-                continue;
-            };
-            if !local_name.contains(needle) {
-                continue;
-            }
-        }
-
         return Ok(peripheral);
     }
 
-    Err(BleTransportError::NoMatchingPeripheral)
+    Err(BleTransportError::DeviceNotFound(device_id.to_string()))
 }
