@@ -1,6 +1,11 @@
 [package]
 name = "zmk-studio-api"
-version = "0.1.0"
+license = "Apache-2.0"
+description = "Rust + Python client for the ZMK Studio RPC API (Serial + BLE)"
+authors = ["Stephan Rumswinkel"]
+repository = "https://github.com/srwi/zmk-studio-api"
+readme = "README.md"
+version = "0.1.1"
 edition = "2024"
 
 [lib]
