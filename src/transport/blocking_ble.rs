@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
 
 pub(crate) trait BleWorkerBackend: Send + 'static {
     type ConnectArg: Send + 'static;
@@ -31,10 +31,12 @@ pub(crate) trait BleWorkerBackend: Send + 'static {
         &'a self,
         data: &'a [u8],
     ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>;
+
+    fn shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
 pub(crate) struct BlockingBleTransport {
-    write_tx: UnboundedSender<Vec<u8>>,
+    write_tx: TokioSender<Vec<u8>>,
     read_rx: Receiver<Vec<u8>>,
     read_queue: VecDeque<u8>,
     read_timeout: Duration,
@@ -43,6 +45,7 @@ pub(crate) struct BlockingBleTransport {
 impl BlockingBleTransport {
     pub(crate) fn connect<B>(
         connect_arg: B::ConnectArg,
+        write_queue_capacity: usize,
         read_timeout: Duration,
         map_runtime_init: fn(std::io::Error) -> B::Error,
         map_setup_closed: fn() -> B::Error,
@@ -50,7 +53,7 @@ impl BlockingBleTransport {
     where
         B: BleWorkerBackend,
     {
-        let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (write_tx, write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(write_queue_capacity.max(1));
         let (read_tx, read_rx) = mpsc::channel::<Vec<u8>>();
         let (setup_tx, setup_rx) = mpsc::channel::<Result<(), B::Error>>();
 
@@ -81,7 +84,7 @@ impl BlockingBleTransport {
 
 async fn run_worker<B: BleWorkerBackend>(
     connect_arg: B::ConnectArg,
-    mut write_rx: UnboundedReceiver<Vec<u8>>,
+    mut write_rx: TokioReceiver<Vec<u8>>,
     read_tx: mpsc::Sender<Vec<u8>>,
     setup_tx: mpsc::Sender<Result<(), B::Error>>,
 ) {
@@ -96,6 +99,7 @@ async fn run_worker<B: BleWorkerBackend>(
     let mut notifications = match backend.notifications().await {
         Ok(notifications) => notifications,
         Err(err) => {
+            backend.shutdown().await;
             let _ = setup_tx.send(Err(err));
             return;
         }
@@ -127,6 +131,8 @@ async fn run_worker<B: BleWorkerBackend>(
             }
         }
     }
+
+    backend.shutdown().await;
 }
 
 impl Read for BlockingBleTransport {
@@ -166,7 +172,7 @@ impl Read for BlockingBleTransport {
 
 impl Write for BlockingBleTransport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_tx.send(buf.to_vec()).map_err(|_| {
+        self.write_tx.blocking_send(buf.to_vec()).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "BLE transport worker is not running",

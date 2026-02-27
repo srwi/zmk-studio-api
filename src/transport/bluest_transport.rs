@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 use super::blocking_ble::{BleWorkerBackend, BlockingBleTransport};
 use super::{
     BleDeviceInfo, BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SETUP_TIMEOUT,
-    ZMK_RPC_CHAR_UUID_STR, ZMK_SERVICE_UUID_STR,
+    DEFAULT_BLE_WRITE_QUEUE_CAPACITY, ZMK_RPC_CHAR_UUID_STR, ZMK_SERVICE_UUID_STR,
 };
 
 fn zmk_uuids() -> (Uuid, Uuid) {
@@ -122,6 +122,7 @@ impl BluestTransport {
 
         let inner = BlockingBleTransport::connect::<BluestBackend>(
             device_id,
+            DEFAULT_BLE_WRITE_QUEUE_CAPACITY,
             DEFAULT_BLE_READ_TIMEOUT,
             BluestTransportError::Runtime,
             || {
@@ -230,5 +231,9 @@ impl BleWorkerBackend for BluestBackend {
             }
             Ok(())
         })
+    }
+
+    fn shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async {})
     }
 }

@@ -12,8 +12,8 @@ use tokio::runtime::Runtime;
 
 use super::blocking_ble::{BleWorkerBackend, BlockingBleTransport};
 use super::{
-    BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SCAN_TIMEOUT, ZMK_RPC_CHAR_UUID_STR,
-    ZMK_SERVICE_UUID_STR,
+    BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SCAN_TIMEOUT,
+    DEFAULT_BLE_WRITE_QUEUE_CAPACITY, ZMK_RPC_CHAR_UUID_STR, ZMK_SERVICE_UUID_STR,
 };
 
 #[derive(Debug, Clone)]
@@ -139,6 +139,7 @@ impl BleTransport {
         let read_timeout = options.read_timeout;
         let inner = BlockingBleTransport::connect::<BtleplugBackend>(
             options,
+            DEFAULT_BLE_WRITE_QUEUE_CAPACITY,
             read_timeout,
             BleTransportError::RuntimeInit,
             || BleTransportError::SetupChannelClosed,
@@ -262,6 +263,12 @@ impl BleWorkerBackend for BtleplugBackend {
                 .write(&self.characteristic, data, self.write_type)
                 .await?;
             Ok(())
+        })
+    }
+
+    fn shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let _ = self.peripheral.disconnect().await;
         })
     }
 }
