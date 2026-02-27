@@ -7,10 +7,14 @@ use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
+#[cfg(any(feature = "ble", target_os = "windows"))]
+use crate::transport::BleDeviceInfo;
 #[cfg(feature = "ble")]
-use crate::transport::ble::{BleDeviceInfo, BleTransport, BleTransportError};
+use crate::transport::ble::{BleTransport, BleTransportError};
 #[cfg(feature = "serial")]
 use crate::transport::serial::{SerialTransport, SerialTransportError};
+#[cfg(target_os = "windows")]
+use crate::transport::winrt::{WinRtGattTransport, WinRtTransportError};
 
 /// High-level error type returned by [`StudioClient`] operations.
 #[derive(Debug)]
@@ -970,5 +974,35 @@ impl StudioClient<BleTransport> {
     /// Convenience constructor for opening a deterministic BLE transport by device ID.
     pub fn open_ble(device_id: &str) -> Result<Self, BleTransportError> {
         Ok(Self::new(BleTransport::connect_device(device_id)?))
+    }
+}
+
+/// Native WinRT GATT transport — Windows only.
+///
+/// Use this instead of [`StudioClient::open_ble`] on Windows when the device
+/// is already paired and connected as a HID peripheral (the common case for a
+/// ZMK keyboard that has been previously paired).  Unlike the btleplug-based
+/// transport it does not require a BLE advertisement scan and connects directly
+/// via `BluetoothLEDevice::FromBluetoothAddressAsync`.
+#[cfg(target_os = "windows")]
+impl StudioClient<WinRtGattTransport> {
+    /// Probe one or more BLE devices by Bluetooth address and return those that
+    /// expose the ZMK Studio service.  Works for already-connected peripherals.
+    pub fn probe_ble_devices(bt_addresses: &[[u8; 6]]) -> Vec<BleDeviceInfo> {
+        // Deduplicate before probing to avoid hitting the same device twice
+        // (hidapi reports one entry per HID interface, all sharing the address).
+        let mut seen = std::collections::HashSet::new();
+        bt_addresses
+            .iter()
+            .filter(|&&addr| seen.insert(addr))
+            .filter_map(|&addr| crate::transport::winrt::probe_ble_device(addr))
+            .collect()
+    }
+
+    /// Open a WinRT GATT connection to the given device.  `device_id` must be
+    /// a Bluetooth address in `"AA:BB:CC:DD:EE:FF"` format as returned by
+    /// [`probe_ble_devices`](Self::probe_ble_devices).
+    pub fn open_ble_winrt(device_id: &str) -> Result<Self, WinRtTransportError> {
+        Ok(Self::new(WinRtGattTransport::connect_device(device_id)?))
     }
 }

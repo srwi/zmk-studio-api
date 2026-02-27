@@ -1636,4 +1636,5 @@ dependencies = [
  "strum_macros",
  "tokio",
  "uuid",
+ "windows",
 ]

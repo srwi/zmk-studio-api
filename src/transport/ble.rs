@@ -49,21 +49,8 @@ impl BleConnectOptions {
     }
 }
 
-/// A discoverable ZMK Studio BLE device.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BleDeviceInfo {
-    pub device_id: String,
-    pub local_name: Option<String>,
-}
-
-impl BleDeviceInfo {
-    pub fn display_name(&self) -> String {
-        match &self.local_name {
-            Some(name) if !name.is_empty() => format!("{} [{}]", name, self.device_id),
-            _ => self.device_id.clone(),
-        }
-    }
-}
+// Re-export from the transport root so callers can use either path.
+pub use super::BleDeviceInfo;
 
 /// Errors from BLE transport setup/operation.
 #[derive(Debug)]
@@ -244,11 +231,11 @@ async fn discover_devices_async(
         .next()
         .ok_or(BleTransportError::NoAdapter)?;
 
-    adapter
-        .start_scan(ScanFilter {
-            services: vec![service_uuid],
-        })
-        .await?;
+    // Use an empty ScanFilter so the OS-level watcher receives all
+    // advertisement events.  On Windows, passing a service-UUID filter to the
+    // WinRT BluetoothLEAdvertisementWatcher silently drops any peripheral that
+    // doesn't include that UUID in its advertisement payload.
+    adapter.start_scan(ScanFilter::default()).await?;
     tokio::time::sleep(options.scan_timeout).await;
 
     let peripherals = adapter.peripherals().await?;
@@ -259,14 +246,18 @@ async fn discover_devices_async(
             continue;
         };
 
-        if !props.services.contains(&service_uuid) {
-            continue;
+        // On Linux (BlueZ) and macOS (CoreBluetooth) the service UUIDs are
+        // populated from advertisement data, so we can filter precisely here.
+        // On Windows they are empty until after a full GATT connection;
+        // discovery for Windows goes through StudioClient::probe_ble_devices
+        // in transport/winrt.rs instead, so devices with no service data are
+        // simply ignored here.
+        if props.services.contains(&service_uuid) {
+            devices.push(BleDeviceInfo {
+                device_id: peripheral.id().to_string(),
+                local_name: props.local_name,
+            });
         }
-
-        devices.push(BleDeviceInfo {
-            device_id: peripheral.id().to_string(),
-            local_name: props.local_name,
-        });
     }
 
     Ok(devices)
@@ -340,11 +331,10 @@ async fn connect_peripheral(
         .next()
         .ok_or(BleTransportError::NoAdapter)?;
 
-    adapter
-        .start_scan(ScanFilter {
-            services: vec![service_uuid],
-        })
-        .await?;
+    // Use an empty ScanFilter for the same reason as in discover_devices_async:
+    // Windows WinRT won't deliver advertisement events if the service UUID is
+    // not present in the advertisement payload.
+    adapter.start_scan(ScanFilter::default()).await?;
     tokio::time::sleep(options.scan_timeout).await;
 
     let peripheral = select_peripheral(&adapter, service_uuid, &options.device_id).await?;
@@ -371,24 +361,19 @@ async fn connect_peripheral(
 
 async fn select_peripheral(
     adapter: &Adapter,
-    service_uuid: Uuid,
+    _service_uuid: Uuid,
     device_id: &str,
 ) -> Result<Peripheral, BleTransportError> {
+    // Match by device ID only. The service UUID check is intentionally omitted:
+    // on Windows props.services is empty until after connect() +
+    // discover_services(), so checking it here would always fail. The caller
+    // already performs discover_services() immediately after this returns, which
+    // will confirm (or reject) the service before any communication happens.
     let peripherals = adapter.peripherals().await?;
     for peripheral in peripherals {
-        if peripheral.id().to_string() != device_id {
-            continue;
+        if peripheral.id().to_string() == device_id {
+            return Ok(peripheral);
         }
-
-        let Some(props) = peripheral.properties().await? else {
-            continue;
-        };
-
-        if !props.services.contains(&service_uuid) {
-            continue;
-        }
-
-        return Ok(peripheral);
     }
 
     Err(BleTransportError::DeviceNotFound(device_id.to_string()))
