@@ -9,7 +9,7 @@ use futures::StreamExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use super::BleDeviceInfo;
+use super::{BleDeviceInfo, BleDiscoveryMode};
 
 const SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 const ZMK_SERVICE_UUID_STR: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
@@ -36,6 +36,16 @@ async fn open_adapter() -> Result<Adapter, BluestTransportError> {
 }
 
 pub fn discover_devices() -> Result<Vec<BleDeviceInfo>, BluestTransportError> {
+    discover_devices_with_mode(BleDiscoveryMode::Any)
+}
+
+pub fn discover_devices_with_mode(
+    mode: BleDiscoveryMode,
+) -> Result<Vec<BleDeviceInfo>, BluestTransportError> {
+    if mode == BleDiscoveryMode::Advertising {
+        return Err(BluestTransportError::UnsupportedDiscoveryMode(mode));
+    }
+
     // Discover ZMK Studio keyboards that are already connected as BLE HID devices.
     let rt = Runtime::new().map_err(BluestTransportError::Runtime)?;
     rt.block_on(async {
@@ -67,6 +77,7 @@ pub enum BluestTransportError {
     Ble(bluest::Error),
     Json(serde_json::Error),
     NoAdapter,
+    UnsupportedDiscoveryMode(BleDiscoveryMode),
     ServiceNotFound,
     CharacteristicNotFound,
     SetupFailed(String),
@@ -79,6 +90,9 @@ impl std::fmt::Display for BluestTransportError {
             Self::Ble(e) => write!(f, "BLE error: {e}"),
             Self::Json(e) => write!(f, "Device ID (de)serialization error: {e}"),
             Self::NoAdapter => write!(f, "No Bluetooth adapter found"),
+            Self::UnsupportedDiscoveryMode(mode) => {
+                write!(f, "Discovery mode not supported on this platform: {mode:?}")
+            }
             Self::ServiceNotFound => write!(f, "ZMK Studio GATT service not found on device"),
             Self::CharacteristicNotFound => {
                 write!(f, "ZMK Studio RPC GATT characteristic not found")
@@ -245,13 +259,7 @@ impl Read for BluestTransport {
         }
 
         let mut written = 0;
-        while written < buf.len() {
-            let Some(byte) = self.read_queue.pop_front() else {
-                break;
-            };
-            buf[written] = byte;
-            written += 1;
-        }
+        written += super::read_from_queue(&mut self.read_queue, buf);
         Ok(written)
     }
 }

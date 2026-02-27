@@ -13,6 +13,8 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
 
+use super::BleDiscoveryMode;
+
 const DEFAULT_SCAN_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -59,6 +61,7 @@ pub enum BleTransportError {
     Btleplug(btleplug::Error),
     Uuid(uuid::Error),
     NoAdapter,
+    UnsupportedDiscoveryMode(BleDiscoveryMode),
     DeviceNotFound(String),
     MissingRpcCharacteristic,
     SetupChannelClosed,
@@ -71,6 +74,9 @@ impl std::fmt::Display for BleTransportError {
             Self::Btleplug(err) => write!(f, "BLE error: {err}"),
             Self::Uuid(err) => write!(f, "UUID parse error: {err}"),
             Self::NoAdapter => write!(f, "No Bluetooth adapter available"),
+            Self::UnsupportedDiscoveryMode(mode) => {
+                write!(f, "Discovery mode not supported on this platform: {mode:?}")
+            }
             Self::DeviceNotFound(device_id) => {
                 write!(f, "BLE device not found for id: {device_id}")
             }
@@ -87,6 +93,7 @@ impl std::error::Error for BleTransportError {
             Self::Btleplug(err) => Some(err),
             Self::Uuid(err) => Some(err),
             Self::NoAdapter
+            | Self::UnsupportedDiscoveryMode(_)
             | Self::DeviceNotFound(_)
             | Self::MissingRpcCharacteristic
             | Self::SetupChannelClosed => None,
@@ -108,7 +115,18 @@ impl From<uuid::Error> for BleTransportError {
 
 /// Discover ZMK Studio-capable BLE peripherals.
 pub fn discover_devices() -> Result<Vec<BleDeviceInfo>, BleTransportError> {
-    discover_devices_with_options(BleScanOptions::default())
+    discover_devices_with_mode(BleDiscoveryMode::Any)
+}
+
+pub fn discover_devices_with_mode(
+    mode: BleDiscoveryMode,
+) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
+    match mode {
+        BleDiscoveryMode::Advertising | BleDiscoveryMode::Any => {
+            discover_devices_with_options(BleScanOptions::default())
+        }
+        BleDiscoveryMode::Connected => Err(BleTransportError::UnsupportedDiscoveryMode(mode)),
+    }
 }
 
 /// Blocking BLE transport adapter for [`crate::StudioClient`].
@@ -184,13 +202,7 @@ impl Read for BleTransport {
         }
 
         let mut written = 0;
-        while written < buf.len() {
-            let Some(byte) = self.read_queue.pop_front() else {
-                break;
-            };
-            buf[written] = byte;
-            written += 1;
-        }
+        written += super::read_from_queue(&mut self.read_queue, buf);
 
         Ok(written)
     }
@@ -232,9 +244,7 @@ async fn discover_devices_async(
         .ok_or(BleTransportError::NoAdapter)?;
 
     // Use an empty ScanFilter so the OS-level watcher receives all
-    // advertisement events.  On Windows, passing a service-UUID filter to the
-    // WinRT BluetoothLEAdvertisementWatcher silently drops any peripheral that
-    // doesn't include that UUID in its advertisement payload.
+    // advertisement events; we filter by service UUID using discovered props.
     adapter.start_scan(ScanFilter::default()).await?;
     tokio::time::sleep(options.scan_timeout).await;
 
@@ -246,12 +256,7 @@ async fn discover_devices_async(
             continue;
         };
 
-        // On Linux (BlueZ) and macOS (CoreBluetooth) the service UUIDs are
-        // populated from advertisement data, so we can filter precisely here.
-        // On Windows they are empty until after a full GATT connection;
-        // discovery for Windows goes through StudioClient::probe_ble_devices
-        // in transport/winrt.rs instead, so devices with no service data are
-        // simply ignored here.
+        // Filter by advertised service UUID.
         if props.services.contains(&service_uuid) {
             devices.push(BleDeviceInfo {
                 device_id: peripheral.id().to_string(),
@@ -269,11 +274,10 @@ async fn run_ble_worker(
     setup_tx: mpsc::Sender<Result<(), BleTransportError>>,
     options: BleConnectOptions,
 ) -> Result<(), BleTransportError> {
-    let service_uuid = Uuid::parse_str(BLE_SERVICE_UUID)?;
     let rpc_uuid = Uuid::parse_str(BLE_RPC_CHARACTERISTIC_UUID)?;
 
     let (peripheral, characteristic, write_type) =
-        match connect_peripheral(service_uuid, rpc_uuid, &options).await {
+        match connect_peripheral(rpc_uuid, &options).await {
             Ok(v) => v,
             Err(err) => {
                 let _ = setup_tx.send(Err(err));
@@ -320,7 +324,6 @@ async fn run_ble_worker(
 }
 
 async fn connect_peripheral(
-    service_uuid: Uuid,
     rpc_uuid: Uuid,
     options: &BleConnectOptions,
 ) -> Result<(Peripheral, Characteristic, WriteType), BleTransportError> {
@@ -331,13 +334,15 @@ async fn connect_peripheral(
         .next()
         .ok_or(BleTransportError::NoAdapter)?;
 
-    // Use an empty ScanFilter for the same reason as in discover_devices_async:
-    // Windows WinRT won't deliver advertisement events if the service UUID is
-    // not present in the advertisement payload.
-    adapter.start_scan(ScanFilter::default()).await?;
-    tokio::time::sleep(options.scan_timeout).await;
-
-    let peripheral = select_peripheral(&adapter, service_uuid, &options.device_id).await?;
+    let peripheral = if let Some(peripheral) = select_peripheral(&adapter, &options.device_id).await? {
+        peripheral
+    } else {
+        adapter.start_scan(ScanFilter::default()).await?;
+        tokio::time::sleep(options.scan_timeout).await;
+        select_peripheral(&adapter, &options.device_id)
+            .await?
+            .ok_or_else(|| BleTransportError::DeviceNotFound(options.device_id.clone()))?
+    };
     peripheral.connect().await?;
     peripheral.discover_services().await?;
 
@@ -361,20 +366,14 @@ async fn connect_peripheral(
 
 async fn select_peripheral(
     adapter: &Adapter,
-    _service_uuid: Uuid,
     device_id: &str,
-) -> Result<Peripheral, BleTransportError> {
-    // Match by device ID only. The service UUID check is intentionally omitted:
-    // on Windows props.services is empty until after connect() +
-    // discover_services(), so checking it here would always fail. The caller
-    // already performs discover_services() immediately after this returns, which
-    // will confirm (or reject) the service before any communication happens.
+) -> Result<Option<Peripheral>, BleTransportError> {
     let peripherals = adapter.peripherals().await?;
     for peripheral in peripherals {
         if peripheral.id().to_string() == device_id {
-            return Ok(peripheral);
+            return Ok(Some(peripheral));
         }
     }
 
-    Err(BleTransportError::DeviceNotFound(device_id.to_string()))
+    Ok(None)
 }

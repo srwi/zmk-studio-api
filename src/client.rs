@@ -8,11 +8,10 @@ use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
 #[cfg(feature = "ble")]
-use crate::transport::BleDeviceInfo;
-#[cfg(all(feature = "ble", not(target_os = "windows")))]
-use crate::transport::ble::{BleTransport, BleTransportError};
-#[cfg(all(feature = "ble", target_os = "windows"))]
-use crate::transport::bluest_transport::{BluestTransport, BluestTransportError};
+use crate::transport::{
+    BleDeviceInfo, BleDiscoveryMode, PlatformBleError, PlatformBleTransport,
+    discover_platform_ble_devices,
+};
 #[cfg(feature = "serial")]
 use crate::transport::serial::{SerialTransport, SerialTransportError};
 
@@ -964,33 +963,22 @@ impl StudioClient<SerialTransport> {
     }
 }
 
-#[cfg(all(feature = "ble", not(target_os = "windows")))]
-impl StudioClient<BleTransport> {
-    /// Lists discoverable ZMK Studio BLE devices.
-    pub fn list_ble_devices() -> Result<Vec<BleDeviceInfo>, BleTransportError> {
-        crate::transport::ble::discover_devices()
+#[cfg(feature = "ble")]
+impl StudioClient<PlatformBleTransport> {
+    /// Lists BLE devices using the backend strategy chosen for the current OS.
+    pub fn list_ble_devices() -> Result<Vec<BleDeviceInfo>, PlatformBleError> {
+        Self::list_ble_devices_with_mode(BleDiscoveryMode::Any)
     }
 
-    /// Convenience constructor for opening a deterministic BLE transport by device ID.
-    pub fn open_ble(device_id: &str) -> Result<Self, BleTransportError> {
-        Ok(Self::new(BleTransport::connect_device(device_id)?))
-    }
-}
-
-/// Bluest-backed BLE GATT transport — Windows only.
-///
-/// Uses [`bluest::Adapter::connected_devices_with_services`] for discovery so
-/// that already-paired keyboards (which stop advertising once connected as HID
-/// devices) are found without a BLE scan.
-#[cfg(all(feature = "ble", target_os = "windows"))]
-impl StudioClient<BluestTransport> {
-    /// Lists ZMK Studio keyboards that are already connected via Bluetooth.
-    pub fn list_ble_devices() -> Result<Vec<BleDeviceInfo>, BluestTransportError> {
-        crate::transport::bluest_transport::discover_devices()
+    /// Lists BLE devices using an explicit discovery mode.
+    pub fn list_ble_devices_with_mode(
+        mode: BleDiscoveryMode,
+    ) -> Result<Vec<BleDeviceInfo>, PlatformBleError> {
+        discover_platform_ble_devices(mode)
     }
 
-    /// Open a BLE connection to a device previously returned by [`Self::list_ble_devices`].
-    pub fn open_ble(device_id: &str) -> Result<Self, BluestTransportError> {
-        Ok(Self::new(BluestTransport::connect_device(device_id)?))
+    /// Open a BLE connection to a device previously returned by discovery.
+    pub fn open_ble(device_id: &str) -> Result<Self, PlatformBleError> {
+        Ok(Self::new(PlatformBleTransport::connect_device(device_id)?))
     }
 }

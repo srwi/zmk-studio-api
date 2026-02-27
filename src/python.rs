@@ -8,7 +8,7 @@ use pyo3::types::{PyAny, PyBytes, PyDict, PyModule};
 use strum::IntoEnumIterator;
 
 #[cfg(feature = "ble")]
-use crate::transport::ble::BleTransport;
+use crate::transport::PlatformBleTransport;
 #[cfg(feature = "serial")]
 use crate::transport::serial::SerialTransport;
 use crate::{Behavior, ClientError, HidUsage, Keycode, StudioClient};
@@ -99,7 +99,7 @@ impl PyStudioClient {
     #[staticmethod]
     #[cfg(feature = "ble")]
     pub fn open_ble(device_id: &str) -> PyResult<Self> {
-        let transport = BleTransport::connect_device(device_id).map_err(|err| {
+        let transport = PlatformBleTransport::connect_device(device_id).map_err(|err| {
             PyRuntimeError::new_err(format!("failed to connect BLE transport: {err}"))
         })?;
         Ok(Self {
