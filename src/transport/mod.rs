@@ -18,7 +18,7 @@ impl BleDeviceInfo {
 
 #[cfg(feature = "ble")]
 pub mod ble;
+#[cfg(all(feature = "ble", target_os = "windows"))]
+pub mod bluest_transport;
 #[cfg(feature = "serial")]
 pub mod serial;
-#[cfg(target_os = "windows")]
-pub mod winrt;

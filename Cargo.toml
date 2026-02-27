@@ -14,7 +14,7 @@ crate-type = ["rlib"]
 [features]
 default = ["serial"]
 serial = ["dep:serialport"]
-ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid"]
+ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid", "dep:bluest", "dep:serde_json"]
 python = ["dep:pyo3"]
 
 [dependencies]
@@ -28,15 +28,8 @@ futures = { version = "0.3.32", optional = true }
 uuid = { version = "1.11", optional = true }
 tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
 pyo3 = { version = "0.28.2", features = ["extension-module", "abi3-py39"], optional = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.61", features = [
-    "Devices_Bluetooth",
-    "Devices_Bluetooth_GenericAttributeProfile",
-    "Foundation",
-    "Foundation_Collections",
-    "Storage_Streams",
-] }
+bluest = { version = "0.6", features = ["serde"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [build-dependencies]
 prost-build = "0.14.3"
