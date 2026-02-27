@@ -1,25 +1,20 @@
-use std::collections::VecDeque;
+use std::future::Future;
 use std::io::{Read, Write};
-use std::sync::mpsc::{self, Receiver};
-use std::thread;
+use std::pin::Pin;
 use std::time::Duration;
 
 use btleplug::api::{
     Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
 };
 use btleplug::platform::{Adapter, Manager, Peripheral};
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use uuid::Uuid;
 
-use super::BleDiscoveryMode;
-
-const DEFAULT_SCAN_TIMEOUT: Duration = Duration::from_secs(5);
-const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
-
-const BLE_SERVICE_UUID: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
-const BLE_RPC_CHARACTERISTIC_UUID: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
+use super::blocking_ble::{BleWorkerBackend, BlockingBleTransport};
+use super::{
+    BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SCAN_TIMEOUT, ZMK_RPC_CHAR_UUID_STR,
+    ZMK_SERVICE_UUID_STR,
+};
 
 #[derive(Debug, Clone)]
 struct BleScanOptions {
@@ -29,7 +24,7 @@ struct BleScanOptions {
 impl Default for BleScanOptions {
     fn default() -> Self {
         Self {
-            scan_timeout: DEFAULT_SCAN_TIMEOUT,
+            scan_timeout: DEFAULT_BLE_SCAN_TIMEOUT,
         }
     }
 }
@@ -44,8 +39,8 @@ struct BleConnectOptions {
 impl BleConnectOptions {
     fn new(device_id: &str) -> Self {
         Self {
-            scan_timeout: DEFAULT_SCAN_TIMEOUT,
-            read_timeout: DEFAULT_READ_TIMEOUT,
+            scan_timeout: DEFAULT_BLE_SCAN_TIMEOUT,
+            read_timeout: DEFAULT_BLE_READ_TIMEOUT,
             device_id: device_id.to_string(),
         }
     }
@@ -130,14 +125,8 @@ pub fn discover_devices_with_mode(
 }
 
 /// Blocking BLE transport adapter for [`crate::StudioClient`].
-///
-/// Internally this runs an async worker thread and exposes a blocking
-/// [`Read`] + [`Write`] interface.
 pub struct BleTransport {
-    write_tx: UnboundedSender<Vec<u8>>,
-    read_rx: Receiver<Vec<u8>>,
-    read_queue: VecDeque<u8>,
-    read_timeout: Duration,
+    inner: BlockingBleTransport,
 }
 
 impl BleTransport {
@@ -148,79 +137,29 @@ impl BleTransport {
 
     fn connect_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
         let read_timeout = options.read_timeout;
-        let worker_options = options.clone();
-        let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-        let (read_tx, read_rx) = mpsc::channel::<Vec<u8>>();
-        let (setup_tx, setup_rx) = mpsc::channel::<Result<(), BleTransportError>>();
-
-        thread::spawn(move || {
-            let runtime = match Runtime::new() {
-                Ok(rt) => rt,
-                Err(err) => {
-                    let _ = setup_tx.send(Err(BleTransportError::RuntimeInit(err)));
-                    return;
-                }
-            };
-
-            let _ = runtime.block_on(run_ble_worker(write_rx, read_tx, setup_tx, worker_options));
-        });
-
-        match setup_rx.recv() {
-            Ok(Ok(())) => Ok(Self {
-                write_tx,
-                read_rx,
-                read_queue: VecDeque::new(),
-                read_timeout,
-            }),
-            Ok(Err(err)) => Err(err),
-            Err(_) => Err(BleTransportError::SetupChannelClosed),
-        }
+        let inner = BlockingBleTransport::connect::<BtleplugBackend>(
+            options,
+            read_timeout,
+            BleTransportError::RuntimeInit,
+            || BleTransportError::SetupChannelClosed,
+        )?;
+        Ok(Self { inner })
     }
 }
 
 impl Read for BleTransport {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        if self.read_queue.is_empty() {
-            let packet = self
-                .read_rx
-                .recv_timeout(self.read_timeout)
-                .map_err(|err| match err {
-                    mpsc::RecvTimeoutError::Timeout => std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "Timed out waiting for BLE data",
-                    ),
-                    mpsc::RecvTimeoutError::Disconnected => std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "BLE transport disconnected",
-                    ),
-                })?;
-            self.read_queue.extend(packet);
-        }
-
-        let mut written = 0;
-        written += super::read_from_queue(&mut self.read_queue, buf);
-
-        Ok(written)
+        self.inner.read(buf)
     }
 }
 
 impl Write for BleTransport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_tx.send(buf.to_vec()).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "BLE transport worker is not running",
-            )
-        })?;
-        Ok(buf.len())
+        self.inner.write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.inner.flush()
     }
 }
 
@@ -234,7 +173,7 @@ fn discover_devices_with_options(
 async fn discover_devices_async(
     options: BleScanOptions,
 ) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
-    let service_uuid = Uuid::parse_str(BLE_SERVICE_UUID)?;
+    let service_uuid = uuid::Uuid::parse_str(ZMK_SERVICE_UUID_STR)?;
 
     let manager = Manager::new().await?;
     let adapters = manager.adapters().await?;
@@ -256,7 +195,6 @@ async fn discover_devices_async(
             continue;
         };
 
-        // Filter by advertised service UUID.
         if props.services.contains(&service_uuid) {
             devices.push(BleDeviceInfo {
                 device_id: peripheral.id().to_string(),
@@ -268,63 +206,68 @@ async fn discover_devices_async(
     Ok(devices)
 }
 
-async fn run_ble_worker(
-    mut write_rx: UnboundedReceiver<Vec<u8>>,
-    read_tx: mpsc::Sender<Vec<u8>>,
-    setup_tx: mpsc::Sender<Result<(), BleTransportError>>,
-    options: BleConnectOptions,
-) -> Result<(), BleTransportError> {
-    let rpc_uuid = Uuid::parse_str(BLE_RPC_CHARACTERISTIC_UUID)?;
+struct BtleplugBackend {
+    peripheral: Peripheral,
+    characteristic: Characteristic,
+    write_type: WriteType,
+}
 
-    let (peripheral, characteristic, write_type) =
-        match connect_peripheral(rpc_uuid, &options).await {
-            Ok(v) => v,
-            Err(err) => {
-                let _ = setup_tx.send(Err(err));
-                return Ok(());
-            }
-        };
+impl BleWorkerBackend for BtleplugBackend {
+    type ConnectArg = BleConnectOptions;
+    type Error = BleTransportError;
+    type Notifications<'a> = Pin<Box<dyn Stream<Item = Result<Vec<u8>, Self::Error>> + Send + 'a>>;
 
-    if let Err(err) = peripheral.subscribe(&characteristic).await {
-        let _ = setup_tx.send(Err(err.into()));
-        return Ok(());
-    }
-    let mut notifications = match peripheral.notifications().await {
-        Ok(stream) => stream,
-        Err(err) => {
-            let _ = setup_tx.send(Err(err.into()));
-            return Ok(());
-        }
-    };
-    let _ = setup_tx.send(Ok(()));
-
-    loop {
-        tokio::select! {
-            maybe_notification = notifications.next() => {
-                let Some(notification) = maybe_notification else {
-                    break;
-                };
-                if notification.uuid == characteristic.uuid && read_tx.send(notification.value).is_err() {
-                    break;
-                }
-            }
-            maybe_write = write_rx.recv() => {
-                let Some(data) = maybe_write else {
-                    break;
-                };
-                if let Err(err) = peripheral.write(&characteristic, &data, write_type).await {
-                    return Err(err.into());
-                }
-            }
-        }
+    fn connect(
+        options: Self::ConnectArg,
+    ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Error>> + Send>> {
+        Box::pin(async move {
+            let rpc_uuid = uuid::Uuid::parse_str(ZMK_RPC_CHAR_UUID_STR)?;
+            let (peripheral, characteristic, write_type) = connect_peripheral(rpc_uuid, &options).await?;
+            peripheral.subscribe(&characteristic).await?;
+            Ok(Self {
+                peripheral,
+                characteristic,
+                write_type,
+            })
+        })
     }
 
-    let _ = peripheral.disconnect().await;
-    Ok(())
+    fn notifications<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Notifications<'a>, Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let characteristic_uuid = self.characteristic.uuid;
+            let notifications = self.peripheral.notifications().await?;
+            let notifications = notifications.filter_map(move |notification| {
+                let matches_characteristic = notification.uuid == characteristic_uuid;
+                async move {
+                    if matches_characteristic {
+                        Some(Ok(notification.value))
+                    } else {
+                        None
+                    }
+                }
+            });
+            let notifications: Self::Notifications<'a> = Box::pin(notifications);
+            Ok(notifications)
+        })
+    }
+
+    fn write_packet<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            self.peripheral
+                .write(&self.characteristic, data, self.write_type)
+                .await?;
+            Ok(())
+        })
+    }
 }
 
 async fn connect_peripheral(
-    rpc_uuid: Uuid,
+    rpc_uuid: uuid::Uuid,
     options: &BleConnectOptions,
 ) -> Result<(Peripheral, Characteristic, WriteType), BleTransportError> {
     let manager = Manager::new().await?;
@@ -334,7 +277,8 @@ async fn connect_peripheral(
         .next()
         .ok_or(BleTransportError::NoAdapter)?;
 
-    let peripheral = if let Some(peripheral) = select_peripheral(&adapter, &options.device_id).await? {
+    let peripheral = if let Some(peripheral) = select_peripheral(&adapter, &options.device_id).await?
+    {
         peripheral
     } else {
         adapter.start_scan(ScanFilter::default()).await?;

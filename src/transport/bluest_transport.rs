@@ -1,20 +1,16 @@
-use std::collections::VecDeque;
+use std::future::Future;
 use std::io::{Read, Write};
-use std::sync::mpsc::{self, Receiver};
-use std::thread;
-use std::time::Duration;
+use std::pin::Pin;
 
-use bluest::{Adapter, Uuid};
-use futures::StreamExt;
+use bluest::{Adapter, Characteristic, Uuid};
+use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use super::{BleDeviceInfo, BleDiscoveryMode};
-
-const SETUP_TIMEOUT: Duration = Duration::from_secs(15);
-const ZMK_SERVICE_UUID_STR: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
-const ZMK_RPC_CHAR_UUID_STR: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
-const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
+use super::blocking_ble::{BleWorkerBackend, BlockingBleTransport};
+use super::{
+    BleDeviceInfo, BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SETUP_TIMEOUT,
+    ZMK_RPC_CHAR_UUID_STR, ZMK_SERVICE_UUID_STR,
+};
 
 fn zmk_uuids() -> (Uuid, Uuid) {
     (
@@ -46,7 +42,6 @@ pub fn discover_devices_with_mode(
         return Err(BluestTransportError::UnsupportedDiscoveryMode(mode));
     }
 
-    // Discover ZMK Studio keyboards that are already connected as BLE HID devices.
     let rt = Runtime::new().map_err(BluestTransportError::Runtime)?;
     rt.block_on(async {
         let (service_uuid, _) = zmk_uuids();
@@ -117,10 +112,7 @@ impl From<serde_json::Error> for BluestTransportError {
 }
 
 pub struct BluestTransport {
-    write_tx: UnboundedSender<Vec<u8>>,
-    read_rx: Receiver<Vec<u8>>,
-    read_queue: VecDeque<u8>,
-    read_timeout: Duration,
+    inner: BlockingBleTransport,
 }
 
 impl BluestTransport {
@@ -128,154 +120,115 @@ impl BluestTransport {
         let device_id: bluest::DeviceId =
             serde_json::from_str(device_id_json).map_err(BluestTransportError::Json)?;
 
-        let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-        let (read_tx, read_rx) = mpsc::channel::<Vec<u8>>();
-        let (setup_tx, setup_rx) = mpsc::channel::<Result<(), BluestTransportError>>();
+        let inner = BlockingBleTransport::connect::<BluestBackend>(
+            device_id,
+            DEFAULT_BLE_READ_TIMEOUT,
+            BluestTransportError::Runtime,
+            || {
+                BluestTransportError::SetupFailed(
+                    "worker thread closed channel without signalling".into(),
+                )
+            },
+        )?;
 
-        thread::spawn(move || {
-            let rt = match Runtime::new() {
-                Ok(rt) => rt,
-                Err(e) => {
-                    let _ = setup_tx.send(Err(BluestTransportError::Runtime(e)));
-                    return;
-                }
-            };
-            let _ = rt.block_on(run_worker(device_id, write_rx, read_tx, setup_tx));
-        });
-
-        match setup_rx.recv() {
-            Ok(Ok(())) => Ok(Self {
-                write_tx,
-                read_rx,
-                read_queue: VecDeque::new(),
-                read_timeout: DEFAULT_READ_TIMEOUT,
-            }),
-            Ok(Err(err)) => Err(err),
-            Err(_) => Err(BluestTransportError::SetupFailed(
-                "worker thread closed channel without signalling".into(),
-            )),
-        }
+        Ok(Self { inner })
     }
-}
-
-async fn run_worker(
-    device_id: bluest::DeviceId,
-    mut write_rx: UnboundedReceiver<Vec<u8>>,
-    read_tx: mpsc::Sender<Vec<u8>>,
-    setup_tx: mpsc::Sender<Result<(), BluestTransportError>>,
-) -> Result<(), BluestTransportError> {
-    let (service_uuid, rpc_uuid) = zmk_uuids();
-    let adapter = open_adapter().await?;
-
-    let device = adapter.open_device(&device_id).await?;
-
-    let services = tokio::time::timeout(
-        SETUP_TIMEOUT,
-        device.discover_services_with_uuid(service_uuid),
-    )
-    .await
-    .map_err(|_| {
-        BluestTransportError::SetupFailed(format!(
-            "Timed out after {SETUP_TIMEOUT:?} waiting for GATT service discovery"
-        ))
-    })??;
-    let service = services
-        .into_iter()
-        .next()
-        .ok_or(BluestTransportError::ServiceNotFound)?;
-
-    let chars = service.discover_characteristics_with_uuid(rpc_uuid).await?;
-    let characteristic = chars
-        .into_iter()
-        .next()
-        .ok_or(BluestTransportError::CharacteristicNotFound)?;
-
-    let props = characteristic.properties().await?;
-    let use_write_without_response = props.write_without_response;
-
-    let mut notifications = tokio::time::timeout(SETUP_TIMEOUT, characteristic.notify())
-        .await
-        .map_err(|_| {
-            BluestTransportError::SetupFailed(format!(
-                "Timed out after {SETUP_TIMEOUT:?} waiting to subscribe to notifications"
-            ))
-        })??;
-
-    let _ = setup_tx.send(Ok(()));
-
-    loop {
-        tokio::select! {
-            maybe_notification = notifications.next() => {
-                match maybe_notification {
-                    Some(Ok(data)) => {
-                        if read_tx.send(data).is_err() {
-                            break;
-                        }
-                    }
-                    _ => break,
-                }
-            }
-            maybe_write = write_rx.recv() => {
-                match maybe_write {
-                    Some(data) => {
-                        if use_write_without_response {
-                            if characteristic.write_without_response(&data).await.is_err() {
-                                break;
-                            }
-                        } else if characteristic.write(&data).await.is_err() {
-                            break;
-                        }
-                    }
-                    None => break,
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 impl Read for BluestTransport {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if buf.is_empty() {
-            return Ok(0);
-        }
-
-        if self.read_queue.is_empty() {
-            let packet = self
-                .read_rx
-                .recv_timeout(self.read_timeout)
-                .map_err(|err| match err {
-                    mpsc::RecvTimeoutError::Timeout => std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "Timed out waiting for BLE notification",
-                    ),
-                    mpsc::RecvTimeoutError::Disconnected => std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "BLE worker disconnected",
-                    ),
-                })?;
-            self.read_queue.extend(packet);
-        }
-
-        let mut written = 0;
-        written += super::read_from_queue(&mut self.read_queue, buf);
-        Ok(written)
+        self.inner.read(buf)
     }
 }
 
 impl Write for BluestTransport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_tx.send(buf.to_vec()).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "BLE worker thread has terminated",
-            )
-        })?;
-        Ok(buf.len())
+        self.inner.write(buf)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.inner.flush()
+    }
+}
+
+struct BluestBackend {
+    characteristic: Characteristic,
+    use_write_without_response: bool,
+}
+
+impl BleWorkerBackend for BluestBackend {
+    type ConnectArg = bluest::DeviceId;
+    type Error = BluestTransportError;
+    type Notifications<'a> = Pin<Box<dyn Stream<Item = Result<Vec<u8>, Self::Error>> + Send + 'a>>;
+
+    fn connect(
+        device_id: Self::ConnectArg,
+    ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Error>> + Send>> {
+        Box::pin(async move {
+            let (service_uuid, rpc_uuid) = zmk_uuids();
+            let adapter = open_adapter().await?;
+            let device = adapter.open_device(&device_id).await?;
+
+            let services = tokio::time::timeout(
+                DEFAULT_BLE_SETUP_TIMEOUT,
+                device.discover_services_with_uuid(service_uuid),
+            )
+            .await
+            .map_err(|_| {
+                BluestTransportError::SetupFailed(format!(
+                    "Timed out after {DEFAULT_BLE_SETUP_TIMEOUT:?} waiting for GATT service discovery"
+                ))
+            })??;
+            let service = services
+                .into_iter()
+                .next()
+                .ok_or(BluestTransportError::ServiceNotFound)?;
+
+            let chars = service.discover_characteristics_with_uuid(rpc_uuid).await?;
+            let characteristic = chars
+                .into_iter()
+                .next()
+                .ok_or(BluestTransportError::CharacteristicNotFound)?;
+
+            let props = characteristic.properties().await?;
+            Ok(Self {
+                characteristic,
+                use_write_without_response: props.write_without_response,
+            })
+        })
+    }
+
+    fn notifications<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Notifications<'a>, Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let notifications = tokio::time::timeout(
+                DEFAULT_BLE_SETUP_TIMEOUT,
+                self.characteristic.notify(),
+            )
+                .await
+                .map_err(|_| {
+                    BluestTransportError::SetupFailed(format!(
+                        "Timed out after {DEFAULT_BLE_SETUP_TIMEOUT:?} waiting to subscribe to notifications"
+                    ))
+                })??;
+            let notifications = notifications.map(|packet| packet.map_err(BluestTransportError::from));
+            let notifications: Self::Notifications<'a> = Box::pin(notifications);
+            Ok(notifications)
+        })
+    }
+
+    fn write_packet<'a>(
+        &'a self,
+        data: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.use_write_without_response {
+                self.characteristic.write_without_response(data).await?;
+            } else {
+                self.characteristic.write(data).await?;
+            }
+            Ok(())
+        })
     }
 }

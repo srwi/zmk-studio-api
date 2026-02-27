@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 /// A discoverable ZMK Studio BLE device.
 /// Defined at the transport level so it is available to both the `ble` feature
 /// module and the Windows-only bluest transport without a feature dependency.
@@ -31,23 +33,16 @@ pub enum BleDiscoveryMode {
     Any,
 }
 
-pub(crate) fn read_from_queue(
-    read_queue: &mut std::collections::VecDeque<u8>,
-    buf: &mut [u8],
-) -> usize {
-    let mut written = 0;
-    while written < buf.len() {
-        let Some(byte) = read_queue.pop_front() else {
-            break;
-        };
-        buf[written] = byte;
-        written += 1;
-    }
-    written
-}
+pub(crate) const ZMK_SERVICE_UUID_STR: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
+pub(crate) const ZMK_RPC_CHAR_UUID_STR: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
+pub(crate) const DEFAULT_BLE_SCAN_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const DEFAULT_BLE_READ_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const DEFAULT_BLE_SETUP_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[cfg(feature = "ble")]
 pub mod ble;
+#[cfg(feature = "ble")]
+mod blocking_ble;
 #[cfg(all(feature = "ble", target_os = "windows"))]
 pub mod bluest_transport;
 #[cfg(feature = "serial")]
