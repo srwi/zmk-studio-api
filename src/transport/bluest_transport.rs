@@ -153,6 +153,7 @@ impl Write for BluestTransport {
 }
 
 struct BluestBackend {
+    _adapter: Adapter,
     characteristic: Characteristic,
     use_write_without_response: bool,
 }
@@ -169,6 +170,7 @@ impl BleWorkerBackend for BluestBackend {
             let (service_uuid, rpc_uuid) = zmk_uuids();
             let adapter = open_adapter().await?;
             let device = adapter.open_device(&device_id).await?;
+            adapter.connect_device(&device).await?;
 
             let services = tokio::time::timeout(
                 DEFAULT_BLE_SETUP_TIMEOUT,
@@ -193,6 +195,7 @@ impl BleWorkerBackend for BluestBackend {
 
             let props = characteristic.properties().await?;
             Ok(Self {
+                _adapter: adapter,
                 characteristic,
                 use_write_without_response: props.write_without_response,
             })
