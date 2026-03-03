@@ -18,7 +18,7 @@ impl<T: Read + Write + Send> ReadWriteSend for T {}
 
 type DynClient = StudioClient<Box<dyn ReadWriteSend>>;
 
-#[pyclass(name = "Behavior")]
+#[pyclass(name = "Behavior", from_py_object)]
 #[derive(Clone)]
 pub struct PyBehavior {
     inner: Behavior,

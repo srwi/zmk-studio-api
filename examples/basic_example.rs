@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 
 #[cfg(feature = "ble")]
-use zmk_studio_api::transport::ble::BleTransport;
+use zmk_studio_api::transport::ble::BluestTransport;
 #[cfg(feature = "serial")]
 use zmk_studio_api::transport::serial::SerialTransport;
 use zmk_studio_api::{Behavior, ClientError, HidUsage, Keycode, StudioClient};
@@ -48,7 +48,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     print_usage();
                     return Ok(());
                 };
-                let client = StudioClient::new(BleTransport::connect_device(&device_id)?);
+                let client = StudioClient::new(BluestTransport::connect_device(&device_id)?);
                 run_example(client)
             }
             #[cfg(not(feature = "ble"))]

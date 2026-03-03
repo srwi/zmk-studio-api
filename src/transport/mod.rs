@@ -1,3 +1,4 @@
+#[cfg(feature = "ble")]
 use std::time::Duration;
 
 /// A discoverable ZMK Studio BLE device.
@@ -30,10 +31,15 @@ pub enum BleDiscoveryMode {
     Any,
 }
 
+#[cfg(feature = "ble")]
 pub(crate) const ZMK_SERVICE_UUID_STR: &str = "00000000-0196-6107-c967-c5cfb1c2482a";
+#[cfg(feature = "ble")]
 pub(crate) const ZMK_RPC_CHAR_UUID_STR: &str = "00000001-0196-6107-c967-c5cfb1c2482a";
+#[cfg(feature = "ble")]
 pub(crate) const DEFAULT_BLE_READ_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(feature = "ble")]
 pub(crate) const DEFAULT_BLE_SETUP_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(feature = "ble")]
 pub(crate) const DEFAULT_BLE_WRITE_QUEUE_CAPACITY: usize = 32;
 
 #[cfg(feature = "ble")]

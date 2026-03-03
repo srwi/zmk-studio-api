@@ -10,6 +10,8 @@ use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
 
+type BleResultFuture<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>;
+
 pub(crate) trait BleWorkerBackend: Send + 'static {
     type ConnectArg: Send + 'static;
     type Error: std::error::Error + Send + Sync + 'static;
@@ -17,20 +19,13 @@ pub(crate) trait BleWorkerBackend: Send + 'static {
     where
         Self: 'a;
 
-    fn connect(
-        connect_arg: Self::ConnectArg,
-    ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Error>> + Send>>
+    fn connect(connect_arg: Self::ConnectArg) -> BleResultFuture<'static, Self, Self::Error>
     where
         Self: Sized;
 
-    fn notifications<'a>(
-        &'a self,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Notifications<'a>, Self::Error>> + Send + 'a>>;
+    fn notifications<'a>(&'a self) -> BleResultFuture<'a, Self::Notifications<'a>, Self::Error>;
 
-    fn write_packet<'a>(
-        &'a self,
-        data: &'a [u8],
-    ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>;
+    fn write_packet<'a>(&'a self, data: &'a [u8]) -> BleResultFuture<'a, (), Self::Error>;
 
     fn shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
