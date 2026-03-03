@@ -53,7 +53,8 @@ impl BlockingBleTransport {
     where
         B: BleWorkerBackend,
     {
-        let (write_tx, write_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(write_queue_capacity.max(1));
+        let (write_tx, write_rx) =
+            tokio::sync::mpsc::channel::<Vec<u8>>(write_queue_capacity.max(1));
         let (read_tx, read_rx) = mpsc::channel::<Vec<u8>>();
         let (setup_tx, setup_rx) = mpsc::channel::<Result<(), B::Error>>();
 
@@ -146,9 +147,10 @@ impl Read for BlockingBleTransport {
                 .read_rx
                 .recv_timeout(self.read_timeout)
                 .map_err(|err| match err {
-                    mpsc::RecvTimeoutError::Timeout => {
-                        std::io::Error::new(std::io::ErrorKind::TimedOut, "Timed out waiting for BLE data")
-                    }
+                    mpsc::RecvTimeoutError::Timeout => std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Timed out waiting for BLE data",
+                    ),
                     mpsc::RecvTimeoutError::Disconnected => std::io::Error::new(
                         std::io::ErrorKind::UnexpectedEof,
                         "BLE transport disconnected",

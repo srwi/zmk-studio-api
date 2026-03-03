@@ -7,13 +7,13 @@ use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
 use crate::protocol::{ProtocolError, decode_responses, encode_request};
+#[cfg(feature = "serial")]
+use crate::transport::serial::{SerialTransport, SerialTransportError};
 #[cfg(feature = "ble")]
 use crate::transport::{
     BleDeviceInfo, BleDiscoveryMode, PlatformBleError, PlatformBleTransport,
     discover_platform_ble_devices,
 };
-#[cfg(feature = "serial")]
-use crate::transport::serial::{SerialTransport, SerialTransportError};
 
 /// High-level error type returned by [`StudioClient`] operations.
 #[derive(Debug)]

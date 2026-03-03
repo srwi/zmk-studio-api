@@ -1,160 +1,148 @@
 use std::future::Future;
 use std::io::{Read, Write};
 use std::pin::Pin;
-use std::time::Duration;
 
-use btleplug::api::{
-    Central, CharPropFlags, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
-};
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use bluest::{Adapter, Characteristic, Uuid};
 use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
 
 use super::blocking_ble::{BleWorkerBackend, BlockingBleTransport};
 use super::{
-    BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SCAN_TIMEOUT,
+    BleDeviceInfo, BleDiscoveryMode, DEFAULT_BLE_READ_TIMEOUT, DEFAULT_BLE_SETUP_TIMEOUT,
     DEFAULT_BLE_WRITE_QUEUE_CAPACITY, ZMK_RPC_CHAR_UUID_STR, ZMK_SERVICE_UUID_STR,
 };
 
-#[derive(Debug, Clone)]
-struct BleScanOptions {
-    scan_timeout: Duration,
+fn zmk_uuids() -> (Uuid, Uuid) {
+    (
+        ZMK_SERVICE_UUID_STR
+            .parse()
+            .expect("ZMK service UUID is valid"),
+        ZMK_RPC_CHAR_UUID_STR
+            .parse()
+            .expect("ZMK RPC characteristic UUID is valid"),
+    )
 }
 
-impl Default for BleScanOptions {
-    fn default() -> Self {
-        Self {
-            scan_timeout: DEFAULT_BLE_SCAN_TIMEOUT,
-        }
-    }
+async fn open_adapter() -> Result<Adapter, BluestTransportError> {
+    let adapter = Adapter::default()
+        .await
+        .ok_or(BluestTransportError::NoAdapter)?;
+    adapter.wait_available().await?;
+    Ok(adapter)
 }
 
-#[derive(Debug, Clone)]
-struct BleConnectOptions {
-    scan_timeout: Duration,
-    read_timeout: Duration,
-    device_id: String,
-}
-
-impl BleConnectOptions {
-    fn new(device_id: &str) -> Self {
-        Self {
-            scan_timeout: DEFAULT_BLE_SCAN_TIMEOUT,
-            read_timeout: DEFAULT_BLE_READ_TIMEOUT,
-            device_id: device_id.to_string(),
-        }
-    }
-}
-
-// Re-export from the transport root so callers can use either path.
-pub use super::BleDeviceInfo;
-
-/// Errors from BLE transport setup/operation.
-#[derive(Debug)]
-pub enum BleTransportError {
-    RuntimeInit(std::io::Error),
-    Btleplug(btleplug::Error),
-    Uuid(uuid::Error),
-    NoAdapter,
-    UnsupportedDiscoveryMode(BleDiscoveryMode),
-    DeviceNotFound(String),
-    MissingRpcCharacteristic,
-    SetupChannelClosed,
-}
-
-impl std::fmt::Display for BleTransportError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::RuntimeInit(err) => write!(f, "Failed to initialize runtime: {err}"),
-            Self::Btleplug(err) => write!(f, "BLE error: {err}"),
-            Self::Uuid(err) => write!(f, "UUID parse error: {err}"),
-            Self::NoAdapter => write!(f, "No Bluetooth adapter available"),
-            Self::UnsupportedDiscoveryMode(mode) => {
-                write!(f, "Discovery mode not supported on this platform: {mode:?}")
-            }
-            Self::DeviceNotFound(device_id) => {
-                write!(f, "BLE device not found for id: {device_id}")
-            }
-            Self::MissingRpcCharacteristic => write!(f, "ZMK Studio RPC characteristic not found"),
-            Self::SetupChannelClosed => write!(f, "BLE worker initialization channel closed"),
-        }
-    }
-}
-
-impl std::error::Error for BleTransportError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::RuntimeInit(err) => Some(err),
-            Self::Btleplug(err) => Some(err),
-            Self::Uuid(err) => Some(err),
-            Self::NoAdapter
-            | Self::UnsupportedDiscoveryMode(_)
-            | Self::DeviceNotFound(_)
-            | Self::MissingRpcCharacteristic
-            | Self::SetupChannelClosed => None,
-        }
-    }
-}
-
-impl From<btleplug::Error> for BleTransportError {
-    fn from(value: btleplug::Error) -> Self {
-        Self::Btleplug(value)
-    }
-}
-
-impl From<uuid::Error> for BleTransportError {
-    fn from(value: uuid::Error) -> Self {
-        Self::Uuid(value)
-    }
-}
-
-/// Discover ZMK Studio-capable BLE peripherals.
-pub fn discover_devices() -> Result<Vec<BleDeviceInfo>, BleTransportError> {
+pub fn discover_devices() -> Result<Vec<BleDeviceInfo>, BluestTransportError> {
     discover_devices_with_mode(BleDiscoveryMode::Any)
 }
 
 pub fn discover_devices_with_mode(
     mode: BleDiscoveryMode,
-) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
-    match mode {
-        BleDiscoveryMode::Advertising | BleDiscoveryMode::Any => {
-            discover_devices_with_options(BleScanOptions::default())
+) -> Result<Vec<BleDeviceInfo>, BluestTransportError> {
+    if mode == BleDiscoveryMode::Advertising {
+        return Err(BluestTransportError::UnsupportedDiscoveryMode(mode));
+    }
+
+    let rt = Runtime::new().map_err(BluestTransportError::Runtime)?;
+    rt.block_on(async {
+        let (service_uuid, _) = zmk_uuids();
+        let adapter = open_adapter().await?;
+
+        let devices = adapter
+            .connected_devices_with_services(&[service_uuid])
+            .await?;
+
+        devices
+            .into_iter()
+            .map(|device| {
+                let local_name = device.name().ok();
+                let device_id =
+                    serde_json::to_string(&device.id()).map_err(BluestTransportError::Json)?;
+                Ok(BleDeviceInfo {
+                    device_id,
+                    local_name,
+                })
+            })
+            .collect()
+    })
+}
+
+#[derive(Debug)]
+pub enum BluestTransportError {
+    Runtime(std::io::Error),
+    Ble(bluest::Error),
+    Json(serde_json::Error),
+    NoAdapter,
+    UnsupportedDiscoveryMode(BleDiscoveryMode),
+    ServiceNotFound,
+    CharacteristicNotFound,
+    SetupFailed(String),
+}
+
+impl std::fmt::Display for BluestTransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Runtime(e) => write!(f, "Tokio runtime init failed: {e}"),
+            Self::Ble(e) => write!(f, "BLE error: {e}"),
+            Self::Json(e) => write!(f, "Device ID (de)serialization error: {e}"),
+            Self::NoAdapter => write!(f, "No Bluetooth adapter found"),
+            Self::UnsupportedDiscoveryMode(mode) => {
+                write!(f, "Discovery mode not supported on this platform: {mode:?}")
+            }
+            Self::ServiceNotFound => write!(f, "ZMK Studio GATT service not found on device"),
+            Self::CharacteristicNotFound => {
+                write!(f, "ZMK Studio RPC GATT characteristic not found")
+            }
+            Self::SetupFailed(msg) => write!(f, "BLE worker setup failed: {msg}"),
         }
-        BleDiscoveryMode::Connected => Err(BleTransportError::UnsupportedDiscoveryMode(mode)),
     }
 }
 
-/// Blocking BLE transport adapter for [`crate::StudioClient`].
-pub struct BleTransport {
+impl std::error::Error for BluestTransportError {}
+
+impl From<bluest::Error> for BluestTransportError {
+    fn from(e: bluest::Error) -> Self {
+        Self::Ble(e)
+    }
+}
+
+impl From<serde_json::Error> for BluestTransportError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Json(e)
+    }
+}
+
+pub struct BluestTransport {
     inner: BlockingBleTransport,
 }
 
-impl BleTransport {
-    /// Connects to a specific BLE peripheral using a deterministic device ID.
-    pub fn connect_device(device_id: &str) -> Result<Self, BleTransportError> {
-        Self::connect_with_options(BleConnectOptions::new(device_id))
-    }
+impl BluestTransport {
+    pub fn connect_device(device_id_json: &str) -> Result<Self, BluestTransportError> {
+        let device_id: bluest::DeviceId =
+            serde_json::from_str(device_id_json).map_err(BluestTransportError::Json)?;
 
-    fn connect_with_options(options: BleConnectOptions) -> Result<Self, BleTransportError> {
-        let read_timeout = options.read_timeout;
-        let inner = BlockingBleTransport::connect::<BtleplugBackend>(
-            options,
+        let inner = BlockingBleTransport::connect::<BluestBackend>(
+            device_id,
             DEFAULT_BLE_WRITE_QUEUE_CAPACITY,
-            read_timeout,
-            BleTransportError::RuntimeInit,
-            || BleTransportError::SetupChannelClosed,
+            DEFAULT_BLE_READ_TIMEOUT,
+            BluestTransportError::Runtime,
+            || {
+                BluestTransportError::SetupFailed(
+                    "worker thread closed channel without signalling".into(),
+                )
+            },
         )?;
+
         Ok(Self { inner })
     }
 }
 
-impl Read for BleTransport {
+impl Read for BluestTransport {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
-impl Write for BleTransport {
+impl Write for BluestTransport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.inner.write(buf)
     }
@@ -164,91 +152,73 @@ impl Write for BleTransport {
     }
 }
 
-fn discover_devices_with_options(
-    options: BleScanOptions,
-) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
-    let runtime = Runtime::new().map_err(BleTransportError::RuntimeInit)?;
-    runtime.block_on(discover_devices_async(options))
-}
-
-async fn discover_devices_async(
-    options: BleScanOptions,
-) -> Result<Vec<BleDeviceInfo>, BleTransportError> {
-    let service_uuid = uuid::Uuid::parse_str(ZMK_SERVICE_UUID_STR)?;
-
-    let manager = Manager::new().await?;
-    let adapters = manager.adapters().await?;
-    let adapter = adapters
-        .into_iter()
-        .next()
-        .ok_or(BleTransportError::NoAdapter)?;
-
-    // Use an empty ScanFilter so the OS-level watcher receives all
-    // advertisement events; we filter by service UUID using discovered props.
-    adapter.start_scan(ScanFilter::default()).await?;
-    tokio::time::sleep(options.scan_timeout).await;
-
-    let peripherals = adapter.peripherals().await?;
-    let mut devices = Vec::new();
-
-    for peripheral in peripherals {
-        let Some(props) = peripheral.properties().await? else {
-            continue;
-        };
-
-        if props.services.contains(&service_uuid) {
-            devices.push(BleDeviceInfo {
-                device_id: peripheral.id().to_string(),
-                local_name: props.local_name,
-            });
-        }
-    }
-
-    Ok(devices)
-}
-
-struct BtleplugBackend {
-    peripheral: Peripheral,
+struct BluestBackend {
+    _adapter: Adapter,
     characteristic: Characteristic,
-    write_type: WriteType,
+    use_write_without_response: bool,
 }
 
-impl BleWorkerBackend for BtleplugBackend {
-    type ConnectArg = BleConnectOptions;
-    type Error = BleTransportError;
+impl BleWorkerBackend for BluestBackend {
+    type ConnectArg = bluest::DeviceId;
+    type Error = BluestTransportError;
     type Notifications<'a> = Pin<Box<dyn Stream<Item = Result<Vec<u8>, Self::Error>> + Send + 'a>>;
 
     fn connect(
-        options: Self::ConnectArg,
+        device_id: Self::ConnectArg,
     ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Error>> + Send>> {
         Box::pin(async move {
-            let rpc_uuid = uuid::Uuid::parse_str(ZMK_RPC_CHAR_UUID_STR)?;
-            let (peripheral, characteristic, write_type) = connect_peripheral(rpc_uuid, &options).await?;
-            peripheral.subscribe(&characteristic).await?;
+            let (service_uuid, rpc_uuid) = zmk_uuids();
+            let adapter = open_adapter().await?;
+            let device = adapter.open_device(&device_id).await?;
+            adapter.connect_device(&device).await?;
+
+            let services = tokio::time::timeout(
+                DEFAULT_BLE_SETUP_TIMEOUT,
+                device.discover_services_with_uuid(service_uuid),
+            )
+            .await
+            .map_err(|_| {
+                BluestTransportError::SetupFailed(format!(
+                    "Timed out after {DEFAULT_BLE_SETUP_TIMEOUT:?} waiting for GATT service discovery"
+                ))
+            })??;
+            let service = services
+                .into_iter()
+                .next()
+                .ok_or(BluestTransportError::ServiceNotFound)?;
+
+            let chars = service.discover_characteristics_with_uuid(rpc_uuid).await?;
+            let characteristic = chars
+                .into_iter()
+                .next()
+                .ok_or(BluestTransportError::CharacteristicNotFound)?;
+
+            let props = characteristic.properties().await?;
             Ok(Self {
-                peripheral,
+                _adapter: adapter,
                 characteristic,
-                write_type,
+                use_write_without_response: props.write_without_response,
             })
         })
     }
 
     fn notifications<'a>(
         &'a self,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Notifications<'a>, Self::Error>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Notifications<'a>, Self::Error>> + Send + 'a>>
+    {
         Box::pin(async move {
-            let characteristic_uuid = self.characteristic.uuid;
-            let notifications = self.peripheral.notifications().await?;
-            let notifications = notifications.filter_map(move |notification| {
-                let matches_characteristic = notification.uuid == characteristic_uuid;
-                async move {
-                    if matches_characteristic {
-                        Some(Ok(notification.value))
-                    } else {
-                        None
-                    }
-                }
-            });
+            let notifications = tokio::time::timeout(
+                DEFAULT_BLE_SETUP_TIMEOUT,
+                self.characteristic.notify(),
+            )
+                .await
+                .map_err(|_| {
+                    BluestTransportError::SetupFailed(format!(
+                        "Timed out after {DEFAULT_BLE_SETUP_TIMEOUT:?} waiting to subscribe to notifications"
+                    ))
+                })??;
+            let notifications =
+                notifications.map(|packet| packet.map_err(BluestTransportError::from));
             let notifications: Self::Notifications<'a> = Box::pin(notifications);
             Ok(notifications)
         })
@@ -259,72 +229,16 @@ impl BleWorkerBackend for BtleplugBackend {
         data: &'a [u8],
     ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            self.peripheral
-                .write(&self.characteristic, data, self.write_type)
-                .await?;
+            if self.use_write_without_response {
+                self.characteristic.write_without_response(data).await?;
+            } else {
+                self.characteristic.write(data).await?;
+            }
             Ok(())
         })
     }
 
     fn shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-        Box::pin(async move {
-            let _ = self.peripheral.disconnect().await;
-        })
+        Box::pin(async {})
     }
-}
-
-async fn connect_peripheral(
-    rpc_uuid: uuid::Uuid,
-    options: &BleConnectOptions,
-) -> Result<(Peripheral, Characteristic, WriteType), BleTransportError> {
-    let manager = Manager::new().await?;
-    let adapters = manager.adapters().await?;
-    let adapter = adapters
-        .into_iter()
-        .next()
-        .ok_or(BleTransportError::NoAdapter)?;
-
-    let peripheral = if let Some(peripheral) = select_peripheral(&adapter, &options.device_id).await?
-    {
-        peripheral
-    } else {
-        adapter.start_scan(ScanFilter::default()).await?;
-        tokio::time::sleep(options.scan_timeout).await;
-        select_peripheral(&adapter, &options.device_id)
-            .await?
-            .ok_or_else(|| BleTransportError::DeviceNotFound(options.device_id.clone()))?
-    };
-    peripheral.connect().await?;
-    peripheral.discover_services().await?;
-
-    let characteristic = peripheral
-        .characteristics()
-        .into_iter()
-        .find(|ch| ch.uuid == rpc_uuid)
-        .ok_or(BleTransportError::MissingRpcCharacteristic)?;
-
-    let write_type = if characteristic
-        .properties
-        .contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
-    {
-        WriteType::WithoutResponse
-    } else {
-        WriteType::WithResponse
-    };
-
-    Ok((peripheral, characteristic, write_type))
-}
-
-async fn select_peripheral(
-    adapter: &Adapter,
-    device_id: &str,
-) -> Result<Option<Peripheral>, BleTransportError> {
-    let peripherals = adapter.peripherals().await?;
-    for peripheral in peripherals {
-        if peripheral.id().to_string() == device_id {
-            return Ok(Some(peripheral));
-        }
-    }
-
-    Ok(None)
 }

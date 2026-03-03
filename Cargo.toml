@@ -14,7 +14,7 @@ crate-type = ["rlib"]
 [features]
 default = ["serial"]
 serial = ["dep:serialport"]
-ble = ["dep:btleplug", "dep:futures", "dep:tokio", "dep:uuid", "dep:bluest", "dep:serde_json"]
+ble = ["dep:futures", "dep:tokio", "dep:bluest", "dep:serde_json"]
 python = ["dep:pyo3"]
 
 [dependencies]
@@ -23,9 +23,7 @@ num_enum = "0.7"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 serialport = { version = "4.8", optional = true }
-btleplug = { version = "0.11", optional = true }
 futures = { version = "0.3.32", optional = true }
-uuid = { version = "1.11", optional = true }
 tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
 pyo3 = { version = "0.28.2", features = ["extension-module", "abi3-py39"], optional = true }
 bluest = { version = "0.6", features = ["serde"], optional = true }
