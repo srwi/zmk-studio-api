@@ -115,6 +115,25 @@ impl PyStudioClient {
         ))
     }
 
+    #[staticmethod]
+    #[cfg(feature = "ble")]
+    pub fn list_ble_devices() -> PyResult<Vec<(String, Option<String>)>> {
+        let devices = StudioClient::<PlatformBleTransport>::list_ble_devices()
+            .map_err(|err| PyRuntimeError::new_err(format!("failed to list BLE devices: {err}")))?;
+        Ok(devices
+            .into_iter()
+            .map(|device| (device.device_id, device.local_name))
+            .collect())
+    }
+
+    #[staticmethod]
+    #[cfg(not(feature = "ble"))]
+    pub fn list_ble_devices() -> PyResult<Vec<(String, Option<String>)>> {
+        Err(PyRuntimeError::new_err(
+            "ble support is disabled for this build",
+        ))
+    }
+
     pub fn get_lock_state(&self) -> PyResult<String> {
         let state = self.with_client(|client| client.get_lock_state())?;
         Ok(state.as_str_name().to_string())

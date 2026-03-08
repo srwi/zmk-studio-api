@@ -44,11 +44,16 @@ fn run() -> Result<(), Box<dyn Error>> {
         "ble" => {
             #[cfg(feature = "ble")]
             {
-                let Some(device_id) = args.next() else {
-                    print_usage();
-                    return Ok(());
-                };
-                let client = StudioClient::new(BluestTransport::connect_device(&device_id)?);
+                let devices = StudioClient::<BluestTransport>::list_ble_devices()?;
+                if devices.is_empty() {
+                    return Err(
+                        "No Bluetooth keyboards found. Pair/connect your keyboard first.".into(),
+                    );
+                }
+                let device = &devices[0];
+                println!("Using BLE device: {}", device.display_name());
+
+                let client = StudioClient::new(BluestTransport::connect_device(&device.device_id)?);
                 run_example(client)
             }
             #[cfg(not(feature = "ble"))]
@@ -126,5 +131,5 @@ fn run_example<T: Read + Write>(mut client: StudioClient<T>) -> Result<(), Box<d
 fn print_usage() {
     println!("Usage:");
     println!("  cargo run --example basic_example -- serial <PORT>");
-    println!("  cargo run --example basic_example --features ble -- ble <DEVICE_ID>");
+    println!("  cargo run --example basic_example --features ble -- ble");
 }

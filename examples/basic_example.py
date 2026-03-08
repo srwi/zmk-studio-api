@@ -42,14 +42,19 @@ def main() -> int:
     serial.add_argument("port", help="Serial port path (for example COM3)")
 
     ble = sub.add_parser("ble", help="Connect over BLE")
-    ble.add_argument("device_id", help="BLE device id from discovery")
 
     args = parser.parse_args()
 
     if args.transport == "serial":
         client = zmk.StudioClient.open_serial(args.port)
     else:
-        client = zmk.StudioClient.open_ble(args.device_id)
+        devices = zmk.StudioClient.list_ble_devices()
+        if not devices:
+            raise SystemExit("No Bluetooth keyboards found. Pair/connect your keyboard first.")
+
+        device_id, local_name = devices[0]
+        print("Using BLE device:", local_name or device_id)
+        client = zmk.StudioClient.open_ble(device_id)
 
     run(client)
     return 0
