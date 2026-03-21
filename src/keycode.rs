@@ -96,6 +96,10 @@ pub enum Keycode {
     MINUS = 0x0007002D,
     #[strum(serialize = "EQL")]
     EQUAL = 0x0007002E,
+    #[strum(serialize = "LBKT")]
+    LEFT_BRACKET = 0x0007002F,
+    #[strum(serialize = "RBKT")]
+    RIGHT_BRACKET = 0x00070030,
     #[strum(serialize = "BSLH")]
     BACKSLASH = 0x00070031,
     #[strum(serialize = "NUHS")]
@@ -199,6 +203,9 @@ pub enum Keycode {
     #[strum(serialize = "KP_N0")]
     KP_NUMBER_0 = 0x00070062,
     KP_DOT = 0x00070063,
+    #[strum(serialize = "NUBS")]
+    #[strum(serialize = "NON_US_BSLH")]
+    NON_US_BACKSLASH = 0x00070064,
     #[strum(serialize = "GUI")]
     #[strum(serialize = "K_APP")]
     #[strum(serialize = "K_APPLICATION")]
@@ -470,10 +477,46 @@ pub enum Keycode {
     #[strum(serialize = "M_VOLD")]
     C_VOLUME_DOWN = 0x000C00EA,
     C_SLOW = 0x000C00F5,
+    #[strum(serialize = "C_ALT_AUDIO_INC")]
+    C_ALTERNATE_AUDIO_INCREMENT = 0x000C0173,
+    #[strum(serialize = "C_BRI_INC")]
+    #[strum(serialize = "C_BRI_UP")]
+    C_BRIGHTNESS_INC = 0x000C006F,
+    #[strum(serialize = "C_BRI_DEC")]
+    #[strum(serialize = "C_BRI_DN")]
+    C_BRIGHTNESS_DEC = 0x000C0070,
+    #[strum(serialize = "C_BRI_MIN")]
+    C_BRIGHTNESS_MINIMUM = 0x000C0073,
+    #[strum(serialize = "C_BRI_MAX")]
+    C_BRIGHTNESS_MAXIMUM = 0x000C0074,
+    #[strum(serialize = "C_BRI_AUTO")]
+    C_BRIGHTNESS_AUTO = 0x000C0075,
+    #[strum(serialize = "C_BKLT_TOG")]
+    C_BACKLIGHT_TOGGLE = 0x000C0072,
+    C_MEDIA_COMPUTER = 0x000C0088,
+    C_MEDIA_GUIDE = 0x000C008D,
+    C_MEDIA_VIDEOPHONE = 0x000C008E,
+    C_MEDIA_MESSAGES = 0x000C0090,
+    C_MEDIA_SATELLITE = 0x000C0098,
+    #[strum(serialize = "C_KBIA_PREV")]
+    C_KEYBOARD_INPUT_ASSIST_PREVIOUS = 0x000C02C7,
+    #[strum(serialize = "C_KBIA_NEXT")]
+    C_KEYBOARD_INPUT_ASSIST_NEXT = 0x000C02C8,
+    #[strum(serialize = "C_KBIA_PREV_GRP")]
+    C_KEYBOARD_INPUT_ASSIST_PREVIOUS_GROUP = 0x000C02C9,
+    #[strum(serialize = "C_KBIA_NEXT_GRP")]
+    C_KEYBOARD_INPUT_ASSIST_NEXT_GROUP = 0x000C02CA,
+    #[strum(serialize = "C_KBIA_ACCEPT")]
+    C_KEYBOARD_INPUT_ASSIST_ACCEPT = 0x000C02CB,
+    #[strum(serialize = "C_KBIA_CANCEL")]
+    C_KEYBOARD_INPUT_ASSIST_CANCEL = 0x000C02CC,
+    C_AL_CCC = 0x000C0183,
     C_AL_WORD = 0x000C0184,
     C_AL_TEXT_EDITOR = 0x000C0185,
     #[strum(serialize = "C_AL_SHEET")]
     C_AL_SPREADSHEET = 0x000C0186,
+    C_AL_GRAPHICS_EDITOR = 0x000C0187,
+    C_AL_PRESENTATION = 0x000C0188,
     #[strum(serialize = "C_AL_DB")]
     C_AL_DATABASE = 0x000C0189,
     #[strum(serialize = "C_AL_MAIL")]
@@ -482,13 +525,31 @@ pub enum Keycode {
     C_AL_VOICEMAIL = 0x000C018C,
     #[strum(serialize = "C_AL_CAL")]
     C_AL_CALENDAR = 0x000C018E,
+    #[strum(serialize = "C_AL_ADDRESS_BOOK")]
+    C_AL_CONTACTS = 0x000C018D,
+    C_AL_TASK_MANAGER = 0x000C018F,
     C_AL_JOURNAL = 0x000C0190,
     C_AL_FINANCE = 0x000C0191,
     #[strum(serialize = "C_AL_CALC")]
     C_AL_CALCULATOR = 0x000C0192,
     C_AL_WWW = 0x000C0196,
+    C_AL_AV_CAPTURE_PLAYBACK = 0x000C0193,
+    C_AL_MY_COMPUTER = 0x000C0194,
     #[strum(serialize = "C_AL_CHAT")]
     C_AL_NETWORK_CHAT = 0x000C0199,
+    #[strum(serialize = "C_AL_PREV_TASK")]
+    C_AL_PREVIOUS_TASK = 0x000C01A4,
+    C_AL_NEXT_TASK = 0x000C01A3,
+    C_AL_SELECT_TASK = 0x000C01A2,
+    #[strum(serialize = "C_AL_IM")]
+    C_AL_INSTANT_MESSAGING = 0x000C01BC,
+    #[strum(serialize = "C_AL_TIPS")]
+    #[strum(serialize = "C_AL_TUTORIAL")]
+    C_AL_OEM_FEATURES = 0x000C01BD,
+    C_AL_KEYBOARD_LAYOUT = 0x000C01AE,
+    #[strum(serialize = "C_AL_COFFEE")]
+    #[strum(serialize = "C_AL_LOCK")]
+    C_AL_SCREENSAVER = 0x000C019E,
     C_AL_LOGOFF = 0x000C019C,
     C_AL_CONTROL_PANEL = 0x000C019F,
     C_AL_HELP = 0x000C01A6,
@@ -544,6 +605,8 @@ pub enum Keycode {
     C_AC_REPLY = 0x000C0289,
     C_AC_FORWARD_MAIL = 0x000C028B,
     C_AC_SEND = 0x000C028C,
+    C_AC_DESKTOP_SHOW_ALL_WINDOWS = 0x000C029F,
+    C_AC_DESKTOP_SHOW_ALL_APPLICATIONS = 0x000C02A2,
     #[strum(serialize = "GLOBE")]
     C_AC_NEXT_KEYBOARD_LAYOUT_SELECT = 0x000C029D,
     #[strum(serialize = "BANG")]
@@ -566,18 +629,30 @@ pub enum Keycode {
     #[strum(serialize = "ASTRK")]
     #[strum(serialize = "STAR")]
     ASTERISK = 0x02070025,
+    #[strum(serialize = "LPAR")]
+    LEFT_PARENTHESIS = 0x02070026,
+    #[strum(serialize = "RPAR")]
+    RIGHT_PARENTHESIS = 0x02070027,
     #[strum(serialize = "UNDER")]
     UNDERSCORE = 0x0207002D,
     PLUS = 0x0207002E,
+    #[strum(serialize = "LBRC")]
+    LEFT_BRACE = 0x0207002F,
+    #[strum(serialize = "RBRC")]
+    RIGHT_BRACE = 0x02070030,
     PIPE = 0x02070031,
     TILDE2 = 0x02070032,
     #[strum(serialize = "COLN")]
     COLON = 0x02070033,
+    #[strum(serialize = "DQT")]
+    DOUBLE_QUOTES = 0x02070034,
     #[strum(serialize = "TILD")]
     TILDE = 0x02070035,
     #[strum(serialize = "LABT")]
     #[strum(serialize = "LT")]
     LESS_THAN = 0x02070036,
+    #[strum(serialize = "GT")]
+    GREATER_THAN = 0x02070037,
     #[strum(serialize = "QMARK")]
     QUESTION = 0x02070038,
     CLEAR2 = 0x02070053,
@@ -605,5 +680,61 @@ impl Keycode {
     /// Returns the canonical static name for this keycode variant.
     pub fn to_name(self) -> &'static str {
         <&'static str>::from(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Keycode;
+
+    #[test]
+    fn bracket_keycodes_roundtrip_hid_usage() {
+        assert_eq!(Keycode::LEFT_BRACKET.to_hid_usage(), 0x0007_002F);
+        assert_eq!(Keycode::RIGHT_BRACKET.to_hid_usage(), 0x0007_0030);
+        assert_eq!(Keycode::LEFT_BRACE.to_hid_usage(), 0x0207_002F);
+        assert_eq!(Keycode::RIGHT_BRACE.to_hid_usage(), 0x0207_0030);
+
+        assert_eq!(
+            Keycode::from_hid_usage(0x0007_002F),
+            Some(Keycode::LEFT_BRACKET)
+        );
+        assert_eq!(
+            Keycode::from_hid_usage(0x0007_0030),
+            Some(Keycode::RIGHT_BRACKET)
+        );
+        assert_eq!(
+            Keycode::from_hid_usage(0x0207_002F),
+            Some(Keycode::LEFT_BRACE)
+        );
+        assert_eq!(
+            Keycode::from_hid_usage(0x0207_0030),
+            Some(Keycode::RIGHT_BRACE)
+        );
+    }
+
+    #[test]
+    fn bracket_keycodes_parse_aliases() {
+        assert_eq!(Keycode::from_name("LBKT"), Some(Keycode::LEFT_BRACKET));
+        assert_eq!(Keycode::from_name("RBKT"), Some(Keycode::RIGHT_BRACKET));
+
+        assert_eq!(Keycode::from_name("LBRC"), Some(Keycode::LEFT_BRACE));
+        assert_eq!(Keycode::from_name("RBRC"), Some(Keycode::RIGHT_BRACE));
+
+        assert_eq!(
+            Keycode::from_name(Keycode::LEFT_BRACKET.to_name()),
+            Some(Keycode::LEFT_BRACKET)
+        );
+        assert_eq!(
+            Keycode::from_name(Keycode::RIGHT_BRACKET.to_name()),
+            Some(Keycode::RIGHT_BRACKET)
+        );
+        assert_eq!(
+            Keycode::from_name(Keycode::LEFT_BRACE.to_name()),
+            Some(Keycode::LEFT_BRACE)
+        );
+        assert_eq!(
+            Keycode::from_name(Keycode::RIGHT_BRACE.to_name()),
+            Some(Keycode::RIGHT_BRACE)
+        );
     }
 }
