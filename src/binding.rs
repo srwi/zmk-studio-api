@@ -30,6 +30,16 @@ pub enum BehaviorRole {
     None,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedLayer {
+    /// Stable layer identifier assigned by ZMK Studio.
+    pub id: u32,
+    /// Human-readable layer name, or empty when the device reports none.
+    pub name: String,
+    /// Resolved bindings in key order.
+    pub bindings: Vec<Behavior>,
+}
+
 /// Lossless typed behavior value for a single key binding.
 ///
 /// Used by [`crate::StudioClient::get_key_at`] and [`crate::StudioClient::set_key_at`].

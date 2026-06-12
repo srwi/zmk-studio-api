@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 
-use crate::binding::{Behavior, BehaviorRole, role_from_display_name};
+use crate::binding::{Behavior, BehaviorRole, ResolvedLayer, role_from_display_name};
 use crate::framing::FrameDecoder;
 use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
@@ -311,22 +311,24 @@ impl<T: Read + Write> StudioClient<T> {
 
     /// Fetches the keymap and resolves every binding into a typed [`Behavior`].
     ///
-    /// Returns a `Vec` of layers, each layer being a `Vec<Behavior>` matching
-    /// the order of bindings in the keymap. It fetches the keymap once and converts all
-    /// bindings in a single pass.
-    pub fn resolve_keymap(&mut self) -> Result<Vec<Vec<Behavior>>, ClientError> {
+    /// Returns the layers in keymap order as [`ResolvedLayer`]s, each carrying the
+    /// layer `id`, `name`, and its resolved bindings. It fetches the keymap once and
+    /// converts all bindings in a single pass.
+    pub fn resolve_keymap(&mut self) -> Result<Vec<ResolvedLayer>, ClientError> {
         self.ensure_behavior_catalog()?;
         let keymap = self.get_keymap()?;
 
         let layers = keymap
             .layers
             .iter()
-            .map(|layer| {
-                layer
+            .map(|layer| ResolvedLayer {
+                id: layer.id,
+                name: layer.name.clone(),
+                bindings: layer
                     .bindings
                     .iter()
                     .map(|binding| self.resolve_binding(binding))
-                    .collect()
+                    .collect(),
             })
             .collect();
 

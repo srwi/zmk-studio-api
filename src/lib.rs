@@ -23,6 +23,8 @@ pub mod transport;
 
 /// Typed key binding value used by [`StudioClient::get_key_at`] and [`StudioClient::set_key_at`].
 pub use binding::Behavior;
+/// A keymap layer with metadata and resolved bindings, returned by [`StudioClient::resolve_keymap`].
+pub use binding::ResolvedLayer;
 /// Errors returned by high-level client operations.
 pub use client::{ClientError, StudioClient};
 /// Decoded ZMK HID usage values used in typed behavior APIs.
