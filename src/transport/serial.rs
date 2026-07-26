@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 
 const DEFAULT_BAUD_RATE: u32 = 12_500;
-const DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+const DEFAULT_READ_TIMEOUT: Duration = Duration::from_millis(150);
 
 #[derive(Debug)]
 pub enum SerialTransportError {
@@ -40,7 +40,7 @@ pub struct SerialTransport {
 
 impl SerialTransport {
     pub fn open(path: &str) -> Result<Self, SerialTransportError> {
-        Self::open_with(path, DEFAULT_BAUD_RATE, DEFAULT_TIMEOUT)
+        Self::open_with(path, DEFAULT_BAUD_RATE, DEFAULT_READ_TIMEOUT)
     }
 
     fn open_with(
@@ -48,7 +48,19 @@ impl SerialTransport {
         baud_rate: u32,
         timeout: Duration,
     ) -> Result<Self, SerialTransportError> {
-        let port = serialport::new(path, baud_rate).timeout(timeout).open()?;
+        // Assert DTR on open: POSIX raises it as a side effect of opening the
+        // tty, but Windows leaves it deasserted, and the reference client (Web
+        // Serial) asserts it. Keeping the modem lines identical on every OS
+        // removes a whole class of platform-specific firmware behavior.
+        let mut port = serialport::new(path, baud_rate)
+            .timeout(timeout)
+            .dtr_on_open(true)
+            .open()?;
+        let _ = port.write_request_to_send(true);
+
+        // Discard anything buffered by the OS from a previous session.
+        let _ = port.clear(serialport::ClearBuffer::All);
+
         Ok(Self { inner: port })
     }
 }

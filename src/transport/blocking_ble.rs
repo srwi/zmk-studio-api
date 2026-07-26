@@ -137,7 +137,7 @@ impl Read for BlockingBleTransport {
             return Ok(0);
         }
 
-        if self.read_queue.is_empty() {
+        while self.read_queue.is_empty() {
             let packet = self
                 .read_rx
                 .recv_timeout(self.read_timeout)

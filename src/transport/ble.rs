@@ -152,10 +152,15 @@ impl Write for BluestTransport {
     }
 }
 
+/// Conservative fallback when the backend cannot report the maximum write
+/// length: the ATT default MTU (23) minus the 3-byte write header.
+const FALLBACK_MAX_WRITE_LEN: usize = 20;
+
 struct BluestBackend {
     _adapter: Adapter,
     characteristic: Characteristic,
     use_write_without_response: bool,
+    max_write_len: usize,
 }
 
 impl BleWorkerBackend for BluestBackend {
@@ -194,10 +199,16 @@ impl BleWorkerBackend for BluestBackend {
                 .ok_or(BluestTransportError::CharacteristicNotFound)?;
 
             let props = characteristic.properties().await?;
+            let max_write_len = characteristic
+                .max_write_len_async()
+                .await
+                .unwrap_or(FALLBACK_MAX_WRITE_LEN)
+                .max(1);
             Ok(Self {
                 _adapter: adapter,
                 characteristic,
                 use_write_without_response: props.write_without_response,
+                max_write_len,
             })
         })
     }
@@ -229,10 +240,16 @@ impl BleWorkerBackend for BluestBackend {
         data: &'a [u8],
     ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>> {
         Box::pin(async move {
-            if self.use_write_without_response {
-                self.characteristic.write_without_response(data).await?;
-            } else {
-                self.characteristic.write(data).await?;
+            // A single ATT write is limited to the negotiated maximum. The
+            // firmware treats incoming writes as a byte stream (it appends
+            // them to the RPC ring buffer), so chunking at any boundary is
+            // safe.
+            for chunk in data.chunks(self.max_write_len) {
+                if self.use_write_without_response {
+                    self.characteristic.write_without_response(chunk).await?;
+                } else {
+                    self.characteristic.write(chunk).await?;
+                }
             }
             Ok(())
         })

@@ -1,12 +1,13 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
+use std::time::{Duration, Instant};
 
 use crate::binding::{Behavior, BehaviorRole, ResolvedLayer, role_from_display_name};
 use crate::framing::FrameDecoder;
 use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
 use crate::proto::zmk::studio;
-use crate::protocol::{ProtocolError, decode_responses, encode_request};
+use crate::protocol::{decode_responses, encode_request};
 #[cfg(feature = "serial")]
 use crate::transport::serial::{SerialTransport, SerialTransportError};
 #[cfg(feature = "ble")]
@@ -19,13 +20,12 @@ use crate::transport::{
 #[derive(Debug)]
 pub enum ClientError {
     Io(std::io::Error),
-    Protocol(ProtocolError),
+    Timeout { elapsed: Duration },
     Meta(zmk::meta::ErrorConditions),
     NoResponse,
     MissingResponseType,
     MissingSubsystem,
     UnexpectedSubsystem(&'static str),
-    UnexpectedRequestId { expected: u32, actual: u32 },
     UnknownEnumValue { field: &'static str, value: i32 },
     SetLayerBindingFailed(zmk::keymap::SetLayerBindingResponse),
     SaveChangesFailed(zmk::keymap::SaveChangesErrorCode),
@@ -44,19 +44,15 @@ impl std::fmt::Display for ClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(err) => write!(f, "I/O error: {err}"),
-            Self::Protocol(err) => write!(f, "Protocol error: {err}"),
+            Self::Timeout { elapsed } => {
+                write!(f, "No response from device within {elapsed:?}")
+            }
             Self::Meta(cond) => write!(f, "Device returned meta error: {}", cond.as_str_name()),
             Self::NoResponse => write!(f, "Device returned no response"),
             Self::MissingResponseType => write!(f, "Response was missing type"),
             Self::MissingSubsystem => write!(f, "Request response was missing subsystem"),
             Self::UnexpectedSubsystem(expected) => {
                 write!(f, "Unexpected subsystem in response; expected {expected}")
-            }
-            Self::UnexpectedRequestId { expected, actual } => {
-                write!(
-                    f,
-                    "Unexpected request ID in response: expected {expected}, got {actual}"
-                )
             }
             Self::UnknownEnumValue { field, value } => {
                 write!(f, "Unknown enum value for {field}: {value}")
@@ -106,7 +102,6 @@ impl std::error::Error for ClientError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(err) => Some(err),
-            Self::Protocol(err) => Some(err),
             _ => None,
         }
     }
@@ -118,10 +113,24 @@ impl From<std::io::Error> for ClientError {
     }
 }
 
-impl From<ProtocolError> for ClientError {
-    fn from(value: ProtocolError) -> Self {
-        Self::Protocol(value)
-    }
+/// Default per-call budget. Individual transport reads time out much faster;
+/// the client keeps reading (and re-sends the request) until this elapses.
+pub const DEFAULT_CALL_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Number of times a request is (re-)sent within one call budget before the
+/// call fails with [`ClientError::Timeout`]. Requests carry an echoed ID, so a
+/// late response to an earlier send still matches.
+const CALL_SEND_ATTEMPTS: u32 = 3;
+
+/// Seed the request-ID counter from the clock so IDs from a previous session
+/// (whose responses may still sit in the device's transmit buffer) will not
+/// collide with ours.
+fn seed_request_id() -> u32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    ((elapsed.as_secs() as u32) << 20) ^ elapsed.subsec_nanos()
 }
 
 /// High-level synchronous ZMK Studio RPC client.
@@ -131,12 +140,15 @@ impl From<ProtocolError> for ClientError {
 pub struct StudioClient<T> {
     io: T,
     next_request_id: u32,
+    call_timeout: Duration,
     decoder: FrameDecoder,
     read_buffer: Vec<u8>,
     responses: VecDeque<studio::Response>,
     notifications: VecDeque<studio::Notification>,
     behavior_role_by_id: HashMap<u32, BehaviorRole>,
     behavior_id_by_role: HashMap<BehaviorRole, u32>,
+    behavior_details_fetched: HashSet<u32>,
+    behavior_catalog_complete: bool,
 }
 
 impl<T: Read + Write> StudioClient<T> {
@@ -147,14 +159,43 @@ impl<T: Read + Write> StudioClient<T> {
     fn with_read_buffer(io: T, read_buffer_size: usize) -> Self {
         Self {
             io,
-            next_request_id: 0,
+            next_request_id: seed_request_id(),
+            call_timeout: DEFAULT_CALL_TIMEOUT,
             decoder: FrameDecoder::new(),
             read_buffer: vec![0; read_buffer_size.max(1)],
             responses: VecDeque::new(),
             notifications: VecDeque::new(),
             behavior_role_by_id: HashMap::new(),
             behavior_id_by_role: HashMap::new(),
+            behavior_details_fetched: HashSet::new(),
+            behavior_catalog_complete: false,
         }
+    }
+
+    /// Sets the total time budget for a single RPC call, including re-sends.
+    pub fn set_call_timeout(&mut self, timeout: Duration) {
+        self.call_timeout = timeout.max(Duration::from_millis(1));
+    }
+
+    /// Reads and discards any bytes the device (or the OS) buffered before
+    /// this session, until the line has been quiet for one transport read
+    /// timeout or `max_total` elapsed.
+    ///
+    /// ZMK's UART transport keeps unsent responses and notifications in a ring
+    /// buffer across host connections, so a fresh serial session frequently
+    /// starts with stale — possibly truncated — frames from the previous one.
+    pub fn drain_stale_input(&mut self, max_total: Duration) {
+        let deadline = Instant::now() + max_total;
+        while Instant::now() < deadline {
+            match self.io.read(&mut self.read_buffer) {
+                Ok(0) => break,
+                Ok(_) => continue,
+                Err(err) if is_read_timeout(&err) => break,
+                Err(_) => break,
+            }
+        }
+        self.decoder.reset();
+        self.responses.clear();
     }
 
     /// Returns the next queued notification, if any.
@@ -163,13 +204,22 @@ impl<T: Read + Write> StudioClient<T> {
     }
 
     /// Blocks until a notification arrives and returns it.
+    ///
+    /// Waits indefinitely; only a transport failure ends the wait early.
     pub fn read_notification_blocking(&mut self) -> Result<studio::Notification, ClientError> {
         loop {
             if let Some(notification) = self.next_notification() {
                 return Ok(notification);
             }
 
-            let _ = self.read_next_response()?;
+            // Request responses read here have no in-flight request and are
+            // therefore stale; only notifications are kept.
+            if let Some(studio::Response {
+                r#type: Some(studio::response::Type::Notification(notification)),
+            }) = self.try_read_response()?
+            {
+                self.notifications.push_back(notification);
+            }
         }
     }
 
@@ -296,8 +346,6 @@ impl<T: Read + Write> StudioClient<T> {
         layer_id: u32,
         key_position: i32,
     ) -> Result<Behavior, ClientError> {
-        self.ensure_behavior_catalog()?;
-
         let keymap = self.get_keymap()?;
         let binding = binding_at(&keymap, layer_id, key_position).ok_or(
             ClientError::InvalidLayerOrPosition {
@@ -305,6 +353,7 @@ impl<T: Read + Write> StudioClient<T> {
                 key_position,
             },
         )?;
+        self.ensure_roles_for_bindings(std::iter::once(&binding))?;
 
         Ok(self.resolve_binding(&binding))
     }
@@ -313,10 +362,14 @@ impl<T: Read + Write> StudioClient<T> {
     ///
     /// Returns the layers in keymap order as [`ResolvedLayer`]s, each carrying the
     /// layer `id`, `name`, and its resolved bindings. It fetches the keymap once and
-    /// converts all bindings in a single pass.
+    /// converts all bindings in a single pass. Behavior details are only fetched
+    /// for behaviors the keymap actually uses, keeping the number of RPC round
+    /// trips small on slow links (BLE in particular).
     pub fn resolve_keymap(&mut self) -> Result<Vec<ResolvedLayer>, ClientError> {
-        self.ensure_behavior_catalog()?;
         let keymap = self.get_keymap()?;
+        self.ensure_roles_for_bindings(
+            keymap.layers.iter().flat_map(|layer| layer.bindings.iter()),
+        )?;
 
         let layers = keymap
             .layers
@@ -804,18 +857,46 @@ impl<T: Read + Write> StudioClient<T> {
     }
 
     fn ensure_behavior_catalog(&mut self) -> Result<(), ClientError> {
-        if !self.behavior_role_by_id.is_empty() {
+        if self.behavior_catalog_complete {
             return Ok(());
         }
 
         let ids = self.list_all_behaviors()?;
         for id in ids {
-            let details = self.get_behavior_details(id)?;
-            let role = role_from_display_name(&details.display_name);
-            if let Some(role) = role {
-                self.behavior_role_by_id.insert(id, role);
-                self.behavior_id_by_role.entry(role).or_insert(id);
-            }
+            self.fetch_behavior_role(id)?;
+        }
+        self.behavior_catalog_complete = true;
+
+        Ok(())
+    }
+
+    /// Fetches behavior details only for behaviors referenced by `bindings`
+    /// that are not cached yet.
+    fn ensure_roles_for_bindings<'a>(
+        &mut self,
+        bindings: impl Iterator<Item = &'a zmk::keymap::BehaviorBinding>,
+    ) -> Result<(), ClientError> {
+        let missing: HashSet<u32> = bindings
+            .filter_map(|binding| u32::try_from(binding.behavior_id).ok())
+            .filter(|id| !self.behavior_details_fetched.contains(id))
+            .collect();
+
+        for id in missing {
+            self.fetch_behavior_role(id)?;
+        }
+
+        Ok(())
+    }
+
+    fn fetch_behavior_role(&mut self, id: u32) -> Result<(), ClientError> {
+        if !self.behavior_details_fetched.insert(id) {
+            return Ok(());
+        }
+
+        let details = self.get_behavior_details(id)?;
+        if let Some(role) = role_from_display_name(&details.display_name) {
+            self.behavior_role_by_id.insert(id, role);
+            self.behavior_id_by_role.entry(role).or_insert(id);
         }
 
         Ok(())
@@ -881,20 +962,54 @@ impl<T: Read + Write> StudioClient<T> {
             subsystem: Some(subsystem),
         };
         let bytes = encode_request(&request);
-        self.io.write_all(&bytes)?;
+
+        let started = Instant::now();
+        let deadline = started + self.call_timeout;
+        let resend_interval = self.call_timeout / CALL_SEND_ATTEMPTS;
+        let mut sends_left = CALL_SEND_ATTEMPTS;
+        let mut next_send = started;
 
         loop {
-            let response = self.read_next_response()?;
+            if Instant::now() >= deadline {
+                return Err(ClientError::Timeout {
+                    elapsed: started.elapsed(),
+                });
+            }
+
+            // (Re-)send on a fraction of the budget: the device answers every
+            // request it receives, so silence means the request (or response)
+            // was lost — e.g. dropped in a device-side buffer overflow.
+            if sends_left > 0 && Instant::now() >= next_send {
+                self.io.write_all(&bytes)?;
+                self.io.flush()?;
+                sends_left -= 1;
+                next_send += resend_interval;
+            }
+
+            let Some(response) = self.try_read_response()? else {
+                continue;
+            };
+
             match response.r#type {
                 Some(studio::response::Type::Notification(notification)) => {
                     self.notifications.push_back(notification);
                 }
                 Some(studio::response::Type::RequestResponse(rr)) => {
                     if rr.request_id != request_id {
-                        return Err(ClientError::UnexpectedRequestId {
-                            expected: request_id,
-                            actual: rr.request_id,
-                        });
+                        // Response to a request from an earlier session, still
+                        // queued in the device's transmit buffer. Skip it.
+                        continue;
+                    }
+
+                    let Some(response_subsystem) = &rr.subsystem else {
+                        return Err(ClientError::MissingSubsystem);
+                    };
+                    let request_subsystem =
+                        request.subsystem.as_ref().expect("subsystem set above");
+                    if !subsystem_matches(request_subsystem, response_subsystem) {
+                        // Same ID but a different subsystem: a stale response
+                        // whose ID happens to collide with ours. Skip it.
+                        continue;
                     }
 
                     if let Some(studio::request_response::Subsystem::Meta(meta)) = &rr.subsystem {
@@ -918,33 +1033,57 @@ impl<T: Read + Write> StudioClient<T> {
 
                     return Ok(rr);
                 }
-                None => return Err(ClientError::MissingResponseType),
+                // A frame that decoded to an empty response; nothing to do.
+                None => continue,
             }
         }
     }
 
-    fn read_next_response(&mut self) -> Result<studio::Response, ClientError> {
+    /// Attempts to produce one decoded response, reading from the transport at
+    /// most once. Returns `Ok(None)` when no data arrived within the
+    /// transport's own read timeout.
+    fn try_read_response(&mut self) -> Result<Option<studio::Response>, ClientError> {
         if let Some(response) = self.responses.pop_front() {
-            return Ok(response);
+            return Ok(Some(response));
         }
 
-        loop {
-            let read = self.io.read(&mut self.read_buffer)?;
-            if read == 0 {
-                return Err(ClientError::Io(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "Transport reached EOF",
-                )));
+        match self.io.read(&mut self.read_buffer) {
+            // Transports may legitimately deliver zero bytes (e.g. an empty
+            // BLE packet); it does not signal end-of-stream.
+            Ok(0) => Ok(None),
+            Ok(read) => {
+                let decoded = decode_responses(&mut self.decoder, &self.read_buffer[..read]);
+                self.responses.extend(decoded);
+                Ok(self.responses.pop_front())
             }
-
-            let decoded = decode_responses(&mut self.decoder, &self.read_buffer[..read])?;
-            self.responses.extend(decoded);
-
-            if let Some(response) = self.responses.pop_front() {
-                return Ok(response);
-            }
+            Err(err) if is_read_timeout(&err) => Ok(None),
+            Err(err) => Err(ClientError::Io(err)),
         }
     }
+}
+
+fn is_read_timeout(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::Interrupted
+    )
+}
+
+fn subsystem_matches(
+    request: &studio::request::Subsystem,
+    response: &studio::request_response::Subsystem,
+) -> bool {
+    use studio::request::Subsystem as Req;
+    use studio::request_response::Subsystem as Resp;
+    matches!(
+        (request, response),
+        (Req::Core(_), Resp::Core(_))
+            | (Req::Keymap(_), Resp::Keymap(_))
+            | (Req::Behaviors(_), Resp::Behaviors(_))
+            | (_, Resp::Meta(_))
+    )
 }
 
 fn binding_at(
@@ -960,8 +1099,13 @@ fn binding_at(
 #[cfg(feature = "serial")]
 impl StudioClient<SerialTransport> {
     /// Convenience constructor for opening a serial transport and wrapping it in a client.
+    ///
+    /// Discards any stale bytes buffered by the device or the OS before the
+    /// first request is sent; see [`StudioClient::drain_stale_input`].
     pub fn open_serial(path: &str) -> Result<Self, SerialTransportError> {
-        Ok(Self::new(SerialTransport::open(path)?))
+        let mut client = Self::new(SerialTransport::open(path)?);
+        client.drain_stale_input(Duration::from_secs(1));
+        Ok(client)
     }
 }
 
@@ -981,6 +1125,215 @@ impl StudioClient<PlatformBleTransport> {
 
     /// Open a BLE connection to a device previously returned by discovery.
     pub fn open_ble(device_id: &str) -> Result<Self, PlatformBleError> {
-        Ok(Self::new(PlatformBleTransport::connect_device(device_id)?))
+        let mut client = Self::new(PlatformBleTransport::connect_device(device_id)?);
+        // BLE round trips are paced by the connection interval; allow a
+        // larger budget per call than over USB serial.
+        client.set_call_timeout(Duration::from_secs(8));
+        Ok(client)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framing::encode_frame;
+    use prost::Message;
+    use std::io;
+
+    /// Scripted transport: each `read` consumes one event; an empty script
+    /// behaves like a quiet line (read timeout). All writes are recorded.
+    struct MockTransport {
+        reads: VecDeque<Vec<u8>>,
+        writes: Vec<Vec<u8>>,
+        /// When set, the mock stays quiet until this many writes arrived,
+        /// then delivers one unlock response echoing `respond_id`.
+        respond_after_writes: Option<(usize, u32)>,
+    }
+
+    impl MockTransport {
+        fn new() -> Self {
+            Self {
+                reads: VecDeque::new(),
+                writes: Vec::new(),
+                respond_after_writes: None,
+            }
+        }
+
+        fn queue(&mut self, data: Vec<u8>) {
+            self.reads.push_back(data);
+        }
+    }
+
+    impl Read for MockTransport {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if let Some((min_writes, request_id)) = self.respond_after_writes
+                && self.writes.len() >= min_writes
+            {
+                self.respond_after_writes = None;
+                self.reads.push_back(unlock_response(request_id));
+            }
+
+            match self.reads.pop_front() {
+                Some(data) => {
+                    let len = data.len().min(buf.len());
+                    buf[..len].copy_from_slice(&data[..len]);
+                    assert_eq!(len, data.len(), "test chunk larger than read buffer");
+                    Ok(len)
+                }
+                None => Err(io::Error::new(io::ErrorKind::TimedOut, "quiet line")),
+            }
+        }
+    }
+
+    impl Write for MockTransport {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.writes.push(buf.to_vec());
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn encode_response(response: &studio::Response) -> Vec<u8> {
+        encode_frame(&response.encode_to_vec())
+    }
+
+    /// A core get-lock-state response reporting "unlocked".
+    fn unlock_response(request_id: u32) -> Vec<u8> {
+        encode_response(&studio::Response {
+            r#type: Some(studio::response::Type::RequestResponse(
+                studio::RequestResponse {
+                    request_id,
+                    subsystem: Some(studio::request_response::Subsystem::Core(
+                        zmk::core::Response {
+                            response_type: Some(zmk::core::response::ResponseType::GetLockState(
+                                zmk::core::LockState::ZmkStudioCoreLockStateUnlocked as i32,
+                            )),
+                        },
+                    )),
+                },
+            )),
+        })
+    }
+
+    /// A keymap response carrying the same request ID (subsystem mismatch for
+    /// a core request).
+    fn keymap_response(request_id: u32) -> Vec<u8> {
+        encode_response(&studio::Response {
+            r#type: Some(studio::response::Type::RequestResponse(
+                studio::RequestResponse {
+                    request_id,
+                    subsystem: Some(studio::request_response::Subsystem::Keymap(
+                        zmk::keymap::Response {
+                            response_type: Some(
+                                zmk::keymap::response::ResponseType::CheckUnsavedChanges(false),
+                            ),
+                        },
+                    )),
+                },
+            )),
+        })
+    }
+
+    fn notification_response() -> Vec<u8> {
+        encode_response(&studio::Response {
+            r#type: Some(studio::response::Type::Notification(
+                studio::Notification::default(),
+            )),
+        })
+    }
+
+    fn test_client() -> StudioClient<MockTransport> {
+        let mut client = StudioClient::new(MockTransport::new());
+        client.set_call_timeout(Duration::from_millis(200));
+        client
+    }
+
+    #[test]
+    fn stale_response_with_other_request_id_is_skipped() {
+        let mut client = test_client();
+        let id = client.next_request_id;
+        client.io.queue(unlock_response(id.wrapping_sub(7)));
+        client.io.queue(unlock_response(id));
+
+        let state = client.get_lock_state().expect("call should succeed");
+        assert_eq!(state, zmk::core::LockState::ZmkStudioCoreLockStateUnlocked);
+    }
+
+    #[test]
+    fn garbage_and_truncated_frames_are_skipped() {
+        let mut client = test_client();
+        let id = client.next_request_id;
+        // Garbage bytes, then a frame that never completes before the next
+        // SOF: exactly what a stale device transmit buffer produces.
+        client.io.queue(vec![0x01, 0x02, 0xAB, 0x33, 0x34]);
+        client.io.queue(unlock_response(id));
+
+        let state = client.get_lock_state().expect("call should succeed");
+        assert_eq!(state, zmk::core::LockState::ZmkStudioCoreLockStateUnlocked);
+    }
+
+    #[test]
+    fn same_id_with_wrong_subsystem_is_skipped() {
+        let mut client = test_client();
+        let id = client.next_request_id;
+        client.io.queue(keymap_response(id));
+        client.io.queue(unlock_response(id));
+
+        let state = client.get_lock_state().expect("call should succeed");
+        assert_eq!(state, zmk::core::LockState::ZmkStudioCoreLockStateUnlocked);
+    }
+
+    #[test]
+    fn notifications_are_queued_during_call() {
+        let mut client = test_client();
+        let id = client.next_request_id;
+        client.io.queue(notification_response());
+        client.io.queue(unlock_response(id));
+
+        client.get_lock_state().expect("call should succeed");
+        assert!(client.next_notification().is_some());
+    }
+
+    #[test]
+    fn quiet_line_times_out() {
+        let mut client = test_client();
+        client.set_call_timeout(Duration::from_millis(50));
+
+        match client.get_lock_state() {
+            Err(ClientError::Timeout { .. }) => {}
+            other => panic!("Expected timeout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn request_is_resent_within_budget() {
+        let mut client = test_client();
+        let id = client.next_request_id;
+        client.io.respond_after_writes = Some((2, id));
+
+        let state = client.get_lock_state().expect("call should succeed");
+        assert_eq!(state, zmk::core::LockState::ZmkStudioCoreLockStateUnlocked);
+        assert!(
+            client.io.writes.len() >= 2,
+            "expected at least two sends, got {}",
+            client.io.writes.len()
+        );
+    }
+
+    #[test]
+    fn drain_discards_stale_input() {
+        let mut client = test_client();
+        let id = client.next_request_id;
+        client.io.queue(unlock_response(id.wrapping_sub(1)));
+        client.io.queue(vec![0xAB, 0x55]); // truncated frame
+
+        client.drain_stale_input(Duration::from_secs(1));
+
+        client.io.queue(unlock_response(id));
+        let state = client.get_lock_state().expect("call should succeed");
+        assert_eq!(state, zmk::core::LockState::ZmkStudioCoreLockStateUnlocked);
     }
 }
