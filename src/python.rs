@@ -61,6 +61,7 @@ impl PyBehavior {
             Behavior::GraveEscape => "GraveEscape",
             Behavior::Transparent => "Transparent",
             Behavior::None => "None",
+            Behavior::Custom { .. } => "Custom",
             Behavior::Unknown { .. } => "Unknown",
         }
     }

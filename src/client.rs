@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
-use crate::binding::{Behavior, BehaviorRole, ResolvedLayer, role_from_display_name};
+use crate::binding::{Behavior, BehaviorRole, ResolvedLayer, role_from_display_name, typed_params};
 use crate::framing::FrameDecoder;
 use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
@@ -148,6 +148,9 @@ pub struct StudioClient<T> {
     behavior_role_by_id: HashMap<u32, BehaviorRole>,
     behavior_id_by_role: HashMap<BehaviorRole, u32>,
     behavior_details_fetched: HashSet<u32>,
+    /// Details of behaviors with no built-in role, kept so their bindings can be
+    /// resolved into [`Behavior::Custom`] without another round trip.
+    custom_behavior_details: HashMap<u32, zmk::behaviors::GetBehaviorDetailsResponse>,
     behavior_catalog_complete: bool,
 }
 
@@ -168,6 +171,7 @@ impl<T: Read + Write> StudioClient<T> {
             behavior_role_by_id: HashMap::new(),
             behavior_id_by_role: HashMap::new(),
             behavior_details_fetched: HashSet::new(),
+            custom_behavior_details: HashMap::new(),
             behavior_catalog_complete: false,
         }
     }
@@ -388,6 +392,31 @@ impl<T: Read + Write> StudioClient<T> {
         Ok(layers)
     }
 
+    /// Resolves a binding whose behavior is not one of ZMK's built-ins into
+    /// [`Behavior::Custom`], using the name and parameter metadata the device
+    /// reported for it.
+    fn resolve_custom_binding(
+        &self,
+        behavior_id: u32,
+        binding: &zmk::keymap::BehaviorBinding,
+    ) -> Behavior {
+        let Some(details) = self.custom_behavior_details.get(&behavior_id) else {
+            return Behavior::Unknown {
+                behavior_id: binding.behavior_id,
+                param1: binding.param1,
+                param2: binding.param2,
+            };
+        };
+
+        let (param1, param2) = typed_params(&details.metadata, binding.param1, binding.param2);
+        Behavior::Custom {
+            behavior_id,
+            display_name: details.display_name.clone(),
+            param1,
+            param2,
+        }
+    }
+
     fn resolve_binding(&self, binding: &zmk::keymap::BehaviorBinding) -> Behavior {
         let Ok(binding_behavior_id) = u32::try_from(binding.behavior_id) else {
             return Behavior::Unknown {
@@ -397,11 +426,7 @@ impl<T: Read + Write> StudioClient<T> {
             };
         };
         let Some(role) = self.behavior_role_by_id.get(&binding_behavior_id).copied() else {
-            return Behavior::Unknown {
-                behavior_id: binding.behavior_id,
-                param1: binding.param1,
-                param2: binding.param2,
-            };
+            return self.resolve_custom_binding(binding_behavior_id, binding);
         };
 
         match role {
@@ -621,6 +646,17 @@ impl<T: Read + Write> StudioClient<T> {
                 behavior_id: self.behavior_id_for(BehaviorRole::None, "None")?,
                 param1: 0,
                 param2: 0,
+            },
+            Behavior::Custom {
+                behavior_id,
+                param1,
+                param2,
+                ..
+            } => zmk::keymap::BehaviorBinding {
+                behavior_id: i32::try_from(behavior_id)
+                    .map_err(|_| ClientError::BehaviorIdOutOfRange { behavior_id })?,
+                param1: param1.to_raw(),
+                param2: param2.to_raw(),
             },
             Behavior::Unknown {
                 behavior_id,
@@ -894,9 +930,16 @@ impl<T: Read + Write> StudioClient<T> {
         }
 
         let details = self.get_behavior_details(id)?;
-        if let Some(role) = role_from_display_name(&details.display_name) {
-            self.behavior_role_by_id.insert(id, role);
-            self.behavior_id_by_role.entry(role).or_insert(id);
+        match role_from_display_name(&details.display_name) {
+            Some(role) => {
+                self.behavior_role_by_id.insert(id, role);
+                self.behavior_id_by_role.entry(role).or_insert(id);
+            }
+            // A behavior from the user's keymap: keep its name and parameter
+            // metadata so its bindings resolve into `Behavior::Custom`.
+            None => {
+                self.custom_behavior_details.insert(id, details);
+            }
         }
 
         Ok(())
@@ -1249,6 +1292,112 @@ mod tests {
         let mut client = StudioClient::new(MockTransport::new());
         client.set_call_timeout(Duration::from_millis(200));
         client
+    }
+
+    /// A keymap response holding a single layer with a single binding.
+    fn one_binding_keymap_response(
+        request_id: u32,
+        binding: zmk::keymap::BehaviorBinding,
+    ) -> Vec<u8> {
+        encode_response(&studio::Response {
+            r#type: Some(studio::response::Type::RequestResponse(
+                studio::RequestResponse {
+                    request_id,
+                    subsystem: Some(studio::request_response::Subsystem::Keymap(
+                        zmk::keymap::Response {
+                            response_type: Some(zmk::keymap::response::ResponseType::GetKeymap(
+                                zmk::keymap::Keymap {
+                                    layers: vec![zmk::keymap::Layer {
+                                        id: 0,
+                                        name: "BASE".to_string(),
+                                        bindings: vec![binding],
+                                    }],
+                                    available_layers: 0,
+                                    max_layer_name_length: 16,
+                                },
+                            )),
+                        },
+                    )),
+                },
+            )),
+        })
+    }
+
+    fn behavior_details_response(
+        request_id: u32,
+        details: zmk::behaviors::GetBehaviorDetailsResponse,
+    ) -> Vec<u8> {
+        encode_response(&studio::Response {
+            r#type: Some(studio::response::Type::RequestResponse(
+                studio::RequestResponse {
+                    request_id,
+                    subsystem: Some(studio::request_response::Subsystem::Behaviors(
+                        zmk::behaviors::Response {
+                            response_type: Some(
+                                zmk::behaviors::response::ResponseType::GetBehaviorDetails(details),
+                            ),
+                        },
+                    )),
+                },
+            )),
+        })
+    }
+
+    /// A keymap using a behavior from the user's own keymap — a home row mod —
+    /// resolves to `Custom` with both key parameters typed, instead of the raw
+    /// numbers a name lookup alone can offer.
+    #[test]
+    fn keymap_using_a_custom_behavior_resolves_its_parameters() {
+        use crate::binding::BehaviorParam;
+        use crate::keycode::Keycode;
+        use zmk::behaviors::{
+            BehaviorBindingParametersSet, BehaviorParameterHidUsage,
+            BehaviorParameterValueDescription, behavior_parameter_value_description::ValueType,
+        };
+
+        let hold = Keycode::LEFT_SHIFT.to_hid_usage();
+        let tap = Keycode::A.to_hid_usage();
+        let hid_usage = || BehaviorParameterValueDescription {
+            name: String::new(),
+            value_type: Some(ValueType::HidUsage(BehaviorParameterHidUsage {
+                keyboard_max: 0xFF,
+                consumer_max: 0xFF,
+            })),
+        };
+
+        let mut client = test_client();
+        let id = client.next_request_id;
+        client.io.queue(one_binding_keymap_response(
+            id,
+            zmk::keymap::BehaviorBinding {
+                behavior_id: 27,
+                param1: hold,
+                param2: tap,
+            },
+        ));
+        client.io.queue(behavior_details_response(
+            id + 1,
+            zmk::behaviors::GetBehaviorDetailsResponse {
+                id: 27,
+                display_name: "home_row_mod_left".to_string(),
+                metadata: vec![BehaviorBindingParametersSet {
+                    param1: vec![hid_usage()],
+                    param2: vec![hid_usage()],
+                }],
+            },
+        ));
+
+        let layers = client.resolve_keymap().expect("call should succeed");
+
+        assert_eq!(
+            layers[0].bindings,
+            vec![Behavior::Custom {
+                behavior_id: 27,
+                display_name: "home_row_mod_left".to_string(),
+                param1: BehaviorParam::Keycode(HidUsage::from_encoded(hold)),
+                param2: BehaviorParam::Keycode(HidUsage::from_encoded(tap)),
+            }]
+        );
     }
 
     #[test]

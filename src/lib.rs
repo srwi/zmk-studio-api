@@ -23,6 +23,8 @@ pub mod transport;
 
 /// Typed key binding value used by [`StudioClient::get_key_at`] and [`StudioClient::set_key_at`].
 pub use binding::Behavior;
+/// A typed parameter of a [`Behavior::Custom`] binding.
+pub use binding::BehaviorParam;
 /// A keymap layer with metadata and resolved bindings, returned by [`StudioClient::resolve_keymap`].
 pub use binding::ResolvedLayer;
 /// Errors returned by high-level client operations.

@@ -3,6 +3,7 @@ use std::fmt;
 use crate::keycode::Keycode;
 
 pub const HID_USAGE_KEYBOARD: u16 = 0x07;
+pub const HID_USAGE_CONSUMER: u16 = 0x0C;
 
 pub const MOD_LCTL: u8 = 0x01;
 pub const MOD_LSFT: u8 = 0x02;
