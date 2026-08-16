@@ -5,7 +5,7 @@ description = "Rust + Python client for the ZMK Studio RPC API (Serial + BLE)"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/zmk-studio-api"
 readme = "README.md"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 
 [lib]
@@ -18,20 +18,20 @@ ble = ["dep:futures", "dep:tokio", "dep:bluest", "dep:serde_json"]
 python = ["dep:pyo3"]
 
 [dependencies]
-prost = "0.14.3"
+prost = "0.14.4"
 num_enum = "0.7.6"
 strum = "0.28.0"
 strum_macros = "0.28.0"
 serialport = { version = "4.9.0", optional = true }
-futures = { version = "0.3.32", optional = true }
-tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
-pyo3 = { version = "0.28.3", features = ["extension-module", "abi3-py39"], optional = true }
+futures = { version = "0.3.34", optional = true }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
+pyo3 = { version = "0.29.2", features = ["extension-module", "abi3-py39"], optional = true }
 bluest = { version = "0.6", features = ["serde"], optional = true }
-serde_json = { version = "1", optional = true }
+serde_json = { version = "1.0.151", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", features = ["disable-encoding-assertions"] }
 
 [build-dependencies]
-prost-build = "0.14.3"
+prost-build = "0.14.4"
 protoc-bin-vendored = "3"
