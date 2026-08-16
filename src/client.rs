@@ -914,7 +914,7 @@ impl<T: Read + Write> StudioClient<T> {
     ) -> Result<(), ClientError> {
         let missing: HashSet<u32> = bindings
             .filter_map(|binding| u32::try_from(binding.behavior_id).ok())
-            .filter(|id| !self.behavior_details_fetched.contains(id))
+            .filter(|id| *id != 0 && !self.behavior_details_fetched.contains(id))
             .collect();
 
         for id in missing {
@@ -929,7 +929,11 @@ impl<T: Read + Write> StudioClient<T> {
             return Ok(());
         }
 
-        let details = self.get_behavior_details(id)?;
+        let details = match self.get_behavior_details(id) {
+            Ok(details) => details,
+            Err(ClientError::Meta(zmk::meta::ErrorConditions::Generic)) => return Ok(()),
+            Err(err) => return Err(err),
+        };
         match role_from_display_name(&details.display_name) {
             Some(role) => {
                 self.behavior_role_by_id.insert(id, role);
