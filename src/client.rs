@@ -892,7 +892,12 @@ impl<T: Read + Write> StudioClient<T> {
         i32::try_from(behavior_id).map_err(|_| ClientError::BehaviorIdOutOfRange { behavior_id })
     }
 
-    fn ensure_behavior_catalog(&mut self) -> Result<(), ClientError> {
+    /// Fetches the full behavior catalog (one `ListAllBehaviors` call plus one
+    /// `GetBehaviorDetails` call per behavior) and caches the role mapping, so
+    /// the first [`StudioClient::set_key_at`] is a single round trip instead
+    /// of a catalog fetch. Safe to call more than once; later calls are
+    /// no-ops.
+    pub fn ensure_behavior_catalog(&mut self) -> Result<(), ClientError> {
         if self.behavior_catalog_complete {
             return Ok(());
         }
