@@ -34,6 +34,69 @@ pub enum BehaviorRole {
     None,
 }
 
+impl BehaviorRole {
+    pub const ALL: [BehaviorRole; 26] = [
+        BehaviorRole::KeyPress,
+        BehaviorRole::KeyToggle,
+        BehaviorRole::LayerTap,
+        BehaviorRole::ModTap,
+        BehaviorRole::StickyKey,
+        BehaviorRole::StickyLayer,
+        BehaviorRole::MomentaryLayer,
+        BehaviorRole::ToggleLayer,
+        BehaviorRole::ToLayer,
+        BehaviorRole::Bluetooth,
+        BehaviorRole::ExternalPower,
+        BehaviorRole::OutputSelection,
+        BehaviorRole::Backlight,
+        BehaviorRole::Underglow,
+        BehaviorRole::MouseKeyPress,
+        BehaviorRole::MouseMove,
+        BehaviorRole::MouseScroll,
+        BehaviorRole::CapsWord,
+        BehaviorRole::KeyRepeat,
+        BehaviorRole::Reset,
+        BehaviorRole::Bootloader,
+        BehaviorRole::SoftOff,
+        BehaviorRole::StudioUnlock,
+        BehaviorRole::GraveEscape,
+        BehaviorRole::Transparent,
+        BehaviorRole::None,
+    ];
+
+    /// Human-readable label for the role.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::KeyPress => "Key Press",
+            Self::KeyToggle => "Key Toggle",
+            Self::LayerTap => "Layer-Tap",
+            Self::ModTap => "Mod-Tap",
+            Self::StickyKey => "Sticky Key",
+            Self::StickyLayer => "Sticky Layer",
+            Self::MomentaryLayer => "Momentary Layer",
+            Self::ToggleLayer => "Toggle Layer",
+            Self::ToLayer => "To Layer",
+            Self::Bluetooth => "Bluetooth",
+            Self::ExternalPower => "External Power",
+            Self::OutputSelection => "Output Selection",
+            Self::Backlight => "Backlight",
+            Self::Underglow => "Underglow",
+            Self::MouseKeyPress => "Mouse Key",
+            Self::MouseMove => "Mouse Move",
+            Self::MouseScroll => "Mouse Scroll",
+            Self::CapsWord => "Caps Word",
+            Self::KeyRepeat => "Key Repeat",
+            Self::Reset => "Reset",
+            Self::Bootloader => "Bootloader",
+            Self::SoftOff => "Soft Off",
+            Self::StudioUnlock => "Studio Unlock",
+            Self::GraveEscape => "Grave Escape",
+            Self::Transparent => "Transparent",
+            Self::None => "None",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedLayer {
     /// Stable layer identifier assigned by ZMK Studio.
@@ -160,6 +223,42 @@ pub enum Behavior {
         param1: u32,
         param2: u32,
     },
+}
+
+impl Behavior {
+    /// Returns the standard [`BehaviorRole`] this behavior corresponds to, or `None`
+    /// for custom/unknown behaviors.
+    pub fn role(&self) -> Option<BehaviorRole> {
+        match self {
+            Self::KeyPress(_) => Some(BehaviorRole::KeyPress),
+            Self::KeyToggle(_) => Some(BehaviorRole::KeyToggle),
+            Self::LayerTap { .. } => Some(BehaviorRole::LayerTap),
+            Self::ModTap { .. } => Some(BehaviorRole::ModTap),
+            Self::StickyKey(_) => Some(BehaviorRole::StickyKey),
+            Self::StickyLayer { .. } => Some(BehaviorRole::StickyLayer),
+            Self::MomentaryLayer { .. } => Some(BehaviorRole::MomentaryLayer),
+            Self::ToggleLayer { .. } => Some(BehaviorRole::ToggleLayer),
+            Self::ToLayer { .. } => Some(BehaviorRole::ToLayer),
+            Self::Bluetooth { .. } => Some(BehaviorRole::Bluetooth),
+            Self::ExternalPower { .. } => Some(BehaviorRole::ExternalPower),
+            Self::OutputSelection { .. } => Some(BehaviorRole::OutputSelection),
+            Self::Backlight { .. } => Some(BehaviorRole::Backlight),
+            Self::Underglow { .. } => Some(BehaviorRole::Underglow),
+            Self::MouseKeyPress { .. } => Some(BehaviorRole::MouseKeyPress),
+            Self::MouseMove { .. } => Some(BehaviorRole::MouseMove),
+            Self::MouseScroll { .. } => Some(BehaviorRole::MouseScroll),
+            Self::CapsWord => Some(BehaviorRole::CapsWord),
+            Self::KeyRepeat => Some(BehaviorRole::KeyRepeat),
+            Self::Reset => Some(BehaviorRole::Reset),
+            Self::Bootloader => Some(BehaviorRole::Bootloader),
+            Self::SoftOff => Some(BehaviorRole::SoftOff),
+            Self::StudioUnlock => Some(BehaviorRole::StudioUnlock),
+            Self::GraveEscape => Some(BehaviorRole::GraveEscape),
+            Self::Transparent => Some(BehaviorRole::Transparent),
+            Self::None => Some(BehaviorRole::None),
+            Self::Custom { .. } | Self::Unknown { .. } => None,
+        }
+    }
 }
 
 /// Types both parameters of a binding against the behavior's metadata.

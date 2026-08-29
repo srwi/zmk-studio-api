@@ -911,6 +911,31 @@ impl<T: Read + Write> StudioClient<T> {
         Ok(())
     }
 
+    /// Returns the set of behavior roles supported by the connected device.
+    ///
+    /// Fetches and caches the full behavior catalog if not already loaded.
+    pub fn supported_roles(&mut self) -> Result<HashSet<BehaviorRole>, ClientError> {
+        self.ensure_behavior_catalog()?;
+        Ok(self.behavior_id_by_role.keys().copied().collect())
+    }
+
+    /// Returns whether the connected device supports the given behavior role.
+    pub fn supports_role(&mut self, role: BehaviorRole) -> Result<bool, ClientError> {
+        self.ensure_behavior_catalog()?;
+        Ok(self.behavior_id_by_role.contains_key(&role))
+    }
+
+    /// Returns whether the connected device supports the given behavior.
+    ///
+    /// Custom and unknown behaviors return `true`. Standard behaviors check
+    /// against the device's behavior catalog.
+    pub fn supports_behavior(&mut self, behavior: &Behavior) -> Result<bool, ClientError> {
+        match behavior.role() {
+            Some(role) => self.supports_role(role),
+            None => Ok(true),
+        }
+    }
+
     /// Fetches behavior details only for behaviors referenced by `bindings`
     /// that are not cached yet.
     fn ensure_roles_for_bindings<'a>(
