@@ -5,7 +5,7 @@ description = "Rust + Python client for the ZMK Studio RPC API (Serial + BLE)"
 authors = ["Stephan Rumswinkel"]
 repository = "https://github.com/srwi/zmk-studio-api"
 readme = "README.md"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2024"
 
 [lib]
