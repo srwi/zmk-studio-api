@@ -44,12 +44,12 @@ impl PyBehavior {
             Behavior::MomentaryLayer { .. } => "MomentaryLayer",
             Behavior::ToggleLayer { .. } => "ToggleLayer",
             Behavior::ToLayer { .. } => "ToLayer",
-            Behavior::Bluetooth { .. } => "Bluetooth",
-            Behavior::ExternalPower { .. } => "ExternalPower",
-            Behavior::OutputSelection { .. } => "OutputSelection",
-            Behavior::Backlight { .. } => "Backlight",
-            Behavior::Underglow { .. } => "Underglow",
-            Behavior::MouseKeyPress { .. } => "MouseKeyPress",
+            Behavior::Bluetooth(_) => "Bluetooth",
+            Behavior::ExternalPower(_) => "ExternalPower",
+            Behavior::OutputSelection(_) => "OutputSelection",
+            Behavior::Backlight(_) => "Backlight",
+            Behavior::Underglow(_) => "Underglow",
+            Behavior::MouseKeyPress(_) => "MouseKeyPress",
             Behavior::MouseMove { .. } => "MouseMove",
             Behavior::MouseScroll { .. } => "MouseScroll",
             Behavior::CapsWord => "CapsWord",
@@ -284,42 +284,56 @@ fn to_layer(layer_id: u32) -> PyBehavior {
 
 #[pyfunction(name = "Bluetooth")]
 fn bluetooth(command: u32, value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::Bluetooth { command, value })
+    PyBehavior::new(Behavior::Bluetooth(
+        crate::binding::BluetoothCommand::from_raw(command, value),
+    ))
 }
 
 #[pyfunction(name = "ExternalPower")]
 fn external_power(value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::ExternalPower { value })
+    PyBehavior::new(Behavior::ExternalPower(
+        crate::binding::ExternalPowerCommand::from_raw(value),
+    ))
 }
 
 #[pyfunction(name = "OutputSelection")]
 fn output_selection(value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::OutputSelection { value })
+    PyBehavior::new(Behavior::OutputSelection(
+        crate::binding::OutputSelection::from_raw(value),
+    ))
 }
 
 #[pyfunction(name = "Backlight")]
 fn backlight(command: u32, value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::Backlight { command, value })
+    PyBehavior::new(Behavior::Backlight(
+        crate::binding::BacklightCommand::from_raw(command, value),
+    ))
 }
 
 #[pyfunction(name = "Underglow")]
 fn underglow(command: u32, value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::Underglow { command, value })
+    PyBehavior::new(Behavior::Underglow(
+        crate::binding::UnderglowCommand::from_raw(command, value),
+    ))
 }
 
 #[pyfunction(name = "MouseKeyPress")]
 fn mouse_key_press(value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::MouseKeyPress { value })
+    PyBehavior::new(Behavior::MouseKeyPress(
+        crate::binding::MouseButton::from_raw(value),
+    ))
 }
 
 #[pyfunction(name = "MouseMove")]
 fn mouse_move(value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::MouseMove { value })
+    let (x, y) = crate::binding::decode_pointing_coords(value);
+    PyBehavior::new(Behavior::MouseMove { x, y })
 }
 
 #[pyfunction(name = "MouseScroll")]
 fn mouse_scroll(value: u32) -> PyBehavior {
-    PyBehavior::new(Behavior::MouseScroll { value })
+    let (x, y) = crate::binding::decode_pointing_coords(value);
+    PyBehavior::new(Behavior::MouseScroll { x, y })
 }
 
 #[pyfunction(name = "CapsWord")]

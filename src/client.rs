@@ -2,7 +2,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
-use crate::binding::{Behavior, BehaviorRole, ResolvedLayer, role_from_display_name, typed_params};
+use crate::binding::{
+    BacklightCommand, Behavior, BehaviorRole, BluetoothCommand, ExternalPowerCommand, MouseButton,
+    OutputSelection, ResolvedLayer, UnderglowCommand, decode_pointing_coords,
+    role_from_display_name, typed_params,
+};
 use crate::framing::FrameDecoder;
 use crate::hid_usage::HidUsage;
 use crate::proto::zmk;
@@ -456,33 +460,32 @@ impl<T: Read + Write> StudioClient<T> {
             BehaviorRole::ToLayer => Behavior::ToLayer {
                 layer_id: binding.param1,
             },
-            BehaviorRole::Bluetooth => Behavior::Bluetooth {
-                command: binding.param1,
-                value: binding.param2,
-            },
-            BehaviorRole::ExternalPower => Behavior::ExternalPower {
-                value: binding.param1,
-            },
-            BehaviorRole::OutputSelection => Behavior::OutputSelection {
-                value: binding.param1,
-            },
-            BehaviorRole::Backlight => Behavior::Backlight {
-                command: binding.param1,
-                value: binding.param2,
-            },
-            BehaviorRole::Underglow => Behavior::Underglow {
-                command: binding.param1,
-                value: binding.param2,
-            },
-            BehaviorRole::MouseKeyPress => Behavior::MouseKeyPress {
-                value: binding.param1,
-            },
-            BehaviorRole::MouseMove => Behavior::MouseMove {
-                value: binding.param1,
-            },
-            BehaviorRole::MouseScroll => Behavior::MouseScroll {
-                value: binding.param1,
-            },
+            BehaviorRole::Bluetooth => {
+                Behavior::Bluetooth(BluetoothCommand::from_raw(binding.param1, binding.param2))
+            }
+            BehaviorRole::ExternalPower => {
+                Behavior::ExternalPower(ExternalPowerCommand::from_raw(binding.param1))
+            }
+            BehaviorRole::OutputSelection => {
+                Behavior::OutputSelection(OutputSelection::from_raw(binding.param1))
+            }
+            BehaviorRole::Backlight => {
+                Behavior::Backlight(BacklightCommand::from_raw(binding.param1, binding.param2))
+            }
+            BehaviorRole::Underglow => {
+                Behavior::Underglow(UnderglowCommand::from_raw(binding.param1, binding.param2))
+            }
+            BehaviorRole::MouseKeyPress => {
+                Behavior::MouseKeyPress(MouseButton::from_raw(binding.param1))
+            }
+            BehaviorRole::MouseMove => {
+                let (x, y) = decode_pointing_coords(binding.param1);
+                Behavior::MouseMove { x, y }
+            }
+            BehaviorRole::MouseScroll => {
+                let (x, y) = decode_pointing_coords(binding.param1);
+                Behavior::MouseScroll { x, y }
+            }
             BehaviorRole::CapsWord => Behavior::CapsWord,
             BehaviorRole::KeyRepeat => Behavior::KeyRepeat,
             BehaviorRole::Reset => Behavior::Reset,
@@ -505,171 +508,23 @@ impl<T: Read + Write> StudioClient<T> {
         behavior: Behavior,
     ) -> Result<(), ClientError> {
         self.ensure_behavior_catalog()?;
-        let binding = match behavior {
-            Behavior::KeyPress(key) => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::KeyPress, "Key Press")?,
-                param1: key.to_hid_usage(),
-                param2: 0,
-            },
-            Behavior::KeyToggle(key) => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::KeyToggle, "Key Toggle")?,
-                param1: key.to_hid_usage(),
-                param2: 0,
-            },
-            Behavior::LayerTap {
-                layer_id: hold_layer_id,
-                tap,
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::LayerTap, "Layer-Tap")?,
-                param1: hold_layer_id,
-                param2: tap.to_hid_usage(),
-            },
-            Behavior::ModTap { hold, tap } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::ModTap, "Mod-Tap")?,
-                param1: hold.to_hid_usage(),
-                param2: tap.to_hid_usage(),
-            },
-            Behavior::StickyKey(key) => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::StickyKey, "Sticky Key")?,
-                param1: key.to_hid_usage(),
-                param2: 0,
-            },
-            Behavior::StickyLayer {
-                layer_id: target_layer_id,
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::StickyLayer, "Sticky Layer")?,
-                param1: target_layer_id,
-                param2: 0,
-            },
-            Behavior::MomentaryLayer {
-                layer_id: hold_layer_id,
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id: self
-                    .behavior_id_for(BehaviorRole::MomentaryLayer, "Momentary Layer")?,
-                param1: hold_layer_id,
-                param2: 0,
-            },
-            Behavior::ToggleLayer {
-                layer_id: target_layer_id,
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::ToggleLayer, "Toggle Layer")?,
-                param1: target_layer_id,
-                param2: 0,
-            },
-            Behavior::ToLayer {
-                layer_id: target_layer_id,
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::ToLayer, "To Layer")?,
-                param1: target_layer_id,
-                param2: 0,
-            },
-            Behavior::Bluetooth { command, value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::Bluetooth, "Bluetooth")?,
-                param1: command,
-                param2: value,
-            },
-            Behavior::ExternalPower { value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::ExternalPower, "External Power")?,
-                param1: value,
-                param2: 0,
-            },
-            Behavior::OutputSelection { value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self
-                    .behavior_id_for(BehaviorRole::OutputSelection, "Output Selection")?,
-                param1: value,
-                param2: 0,
-            },
-            Behavior::Backlight { command, value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::Backlight, "Backlight")?,
-                param1: command,
-                param2: value,
-            },
-            Behavior::Underglow { command, value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::Underglow, "Underglow")?,
-                param1: command,
-                param2: value,
-            },
-            Behavior::MouseKeyPress { value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self
-                    .behavior_id_for(BehaviorRole::MouseKeyPress, "Mouse Key Press")?,
-                param1: value,
-                param2: 0,
-            },
-            Behavior::MouseMove { value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::MouseMove, "Mouse Move")?,
-                param1: value,
-                param2: 0,
-            },
-            Behavior::MouseScroll { value } => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::MouseScroll, "Mouse Scroll")?,
-                param1: value,
-                param2: 0,
-            },
-            Behavior::CapsWord => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::CapsWord, "Caps Word")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::KeyRepeat => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::KeyRepeat, "Key Repeat")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::Reset => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::Reset, "Reset")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::Bootloader => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::Bootloader, "Bootloader")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::SoftOff => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::SoftOff, "Soft Off")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::StudioUnlock => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::StudioUnlock, "Studio Unlock")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::GraveEscape => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::GraveEscape, "Grave/Escape")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::Transparent => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::Transparent, "Transparent")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::None => zmk::keymap::BehaviorBinding {
-                behavior_id: self.behavior_id_for(BehaviorRole::None, "None")?,
-                param1: 0,
-                param2: 0,
-            },
-            Behavior::Custom {
-                behavior_id,
-                param1,
-                param2,
-                ..
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id: i32::try_from(behavior_id)
-                    .map_err(|_| ClientError::BehaviorIdOutOfRange { behavior_id })?,
-                param1: param1.to_raw(),
-                param2: param2.to_raw(),
-            },
-            Behavior::Unknown {
-                behavior_id,
-                param1,
-                param2,
-            } => zmk::keymap::BehaviorBinding {
-                behavior_id,
-                param1,
-                param2,
-            },
+        let (param1, param2) = behavior.raw_params();
+        let behavior_id = match &behavior {
+            Behavior::Custom { behavior_id, .. } => {
+                i32::try_from(*behavior_id).map_err(|_| ClientError::BehaviorIdOutOfRange {
+                    behavior_id: *behavior_id,
+                })?
+            }
+            Behavior::Unknown { behavior_id, .. } => *behavior_id,
+            _ => {
+                let role = behavior.role().expect("standard behavior must have a role");
+                self.behavior_id_for(role, role.label())?
+            }
+        };
+        let binding = zmk::keymap::BehaviorBinding {
+            behavior_id,
+            param1,
+            param2,
         };
 
         self.set_layer_binding(layer_id, key_position, binding)
@@ -1544,5 +1399,74 @@ mod tests {
         client.io.queue(unlock_response(id));
         let state = client.get_lock_state().expect("call should succeed");
         assert_eq!(state, zmk::core::LockState::ZmkStudioCoreLockStateUnlocked);
+    }
+
+    #[test]
+    fn supports_behavior_checks_metadata_ranges() {
+        use crate::binding::BluetoothCommand;
+        use zmk::behaviors::{
+            BehaviorBindingParametersSet, BehaviorParameterValueDescription,
+            BehaviorParameterValueDescriptionRange,
+            behavior_parameter_value_description::ValueType,
+        };
+
+        let mut client = test_client();
+        let id = client.next_request_id;
+        // ListAllBehaviors response: [5]
+        client.io.queue(encode_response(&studio::Response {
+            r#type: Some(studio::response::Type::RequestResponse(
+                studio::RequestResponse {
+                    request_id: id,
+                    subsystem: Some(studio::request_response::Subsystem::Behaviors(
+                        zmk::behaviors::Response {
+                            response_type: Some(
+                                zmk::behaviors::response::ResponseType::ListAllBehaviors(
+                                    zmk::behaviors::ListAllBehaviorsResponse { behaviors: vec![5] },
+                                ),
+                            ),
+                        },
+                    )),
+                },
+            )),
+        }));
+        // GetBehaviorDetails for id 5 (Bluetooth) with 5 profiles (0..=4)
+        client.io.queue(behavior_details_response(
+            id + 1,
+            zmk::behaviors::GetBehaviorDetailsResponse {
+                id: 5,
+                display_name: "bluetooth".to_string(),
+                metadata: vec![BehaviorBindingParametersSet {
+                    param1: vec![BehaviorParameterValueDescription {
+                        name: "command".to_string(),
+                        value_type: Some(ValueType::Constant(3)), // BT_SEL
+                    }],
+                    param2: vec![BehaviorParameterValueDescription {
+                        name: "profile".to_string(),
+                        value_type: Some(ValueType::Range(
+                            BehaviorParameterValueDescriptionRange { min: 0, max: 4 },
+                        )),
+                    }],
+                }],
+            },
+        ));
+
+        // BT profile 0 (BT1) is within range 0..=4
+        assert!(
+            client
+                .supports_behavior(&Behavior::Bluetooth(BluetoothCommand::Select(0)))
+                .expect("call should succeed")
+        );
+        // BT profile 4 (BT5) is within range 0..=4
+        assert!(
+            client
+                .supports_behavior(&Behavior::Bluetooth(BluetoothCommand::Select(4)))
+                .expect("call should succeed")
+        );
+        // BT profile 5 (BT6) exceeds range 0..=4
+        assert!(
+            !client
+                .supports_behavior(&Behavior::Bluetooth(BluetoothCommand::Select(5)))
+                .expect("call should succeed")
+        );
     }
 }

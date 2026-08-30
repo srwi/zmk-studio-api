@@ -21,14 +21,30 @@ mod python;
 /// Transport adapters for connecting to a ZMK Studio-capable device.
 pub mod transport;
 
+/// Typed backlight behavior command.
+pub use binding::BacklightCommand;
 /// Typed key binding value used by [`StudioClient::get_key_at`] and [`StudioClient::set_key_at`].
 pub use binding::Behavior;
 /// A typed parameter of a [`Behavior::Custom`] binding.
 pub use binding::BehaviorParam;
 /// Behavior role describing the built-in function of a behavior.
 pub use binding::BehaviorRole;
+/// Typed Bluetooth behavior command.
+pub use binding::BluetoothCommand;
+/// Typed external power behavior command.
+pub use binding::ExternalPowerCommand;
+/// Typed mouse key button.
+pub use binding::MouseButton;
+/// Typed output selection behavior command.
+pub use binding::OutputSelection;
 /// A keymap layer with metadata and resolved bindings, returned by [`StudioClient::resolve_keymap`].
 pub use binding::ResolvedLayer;
+/// Typed RGB underglow behavior command.
+pub use binding::UnderglowCommand;
+/// Decode pointing `(x, y)` coordinate offsets from a raw ZMK value.
+pub use binding::decode_pointing_coords;
+/// Encode pointing `(x, y)` coordinate offsets into a raw ZMK value.
+pub use binding::encode_pointing_coords;
 /// Checks whether a parameter pair matches a behavior's metadata.
 pub use binding::params_match_metadata;
 /// Errors returned by high-level client operations.

@@ -4,6 +4,258 @@ use crate::proto::zmk::behaviors::{
     behavior_parameter_value_description::ValueType,
 };
 
+/// Commands for the Bluetooth behavior (`&bt`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BluetoothCommand {
+    Clear,
+    Next,
+    Prev,
+    Select(u8),
+    ClearAll,
+    Disconnect(u8),
+    Other { command: u32, value: u32 },
+}
+
+impl BluetoothCommand {
+    pub fn from_raw(command: u32, value: u32) -> Self {
+        match (command, value) {
+            (0, 0) => Self::Clear,
+            (1, 0) => Self::Next,
+            (2, 0) => Self::Prev,
+            (3, val) => Self::Select(val as u8),
+            (4, 0) => Self::ClearAll,
+            (5, val) => Self::Disconnect(val as u8),
+            _ => Self::Other { command, value },
+        }
+    }
+
+    pub fn to_raw(self) -> (u32, u32) {
+        match self {
+            Self::Clear => (0, 0),
+            Self::Next => (1, 0),
+            Self::Prev => (2, 0),
+            Self::Select(val) => (3, val as u32),
+            Self::ClearAll => (4, 0),
+            Self::Disconnect(val) => (5, val as u32),
+            Self::Other { command, value } => (command, value),
+        }
+    }
+}
+
+/// Commands for output selection behavior (`&out`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OutputSelection {
+    Toggle,
+    Usb,
+    Ble,
+    None,
+    Other(u32),
+}
+
+impl OutputSelection {
+    pub fn from_raw(value: u32) -> Self {
+        match value {
+            0 => Self::Toggle,
+            1 => Self::Usb,
+            2 => Self::Ble,
+            3 => Self::None,
+            _ => Self::Other(value),
+        }
+    }
+
+    pub fn to_raw(self) -> u32 {
+        match self {
+            Self::Toggle => 0,
+            Self::Usb => 1,
+            Self::Ble => 2,
+            Self::None => 3,
+            Self::Other(val) => val,
+        }
+    }
+}
+
+/// Commands for external power behavior (`&ext_power`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExternalPowerCommand {
+    Off,
+    On,
+    Toggle,
+    Other(u32),
+}
+
+impl ExternalPowerCommand {
+    pub fn from_raw(value: u32) -> Self {
+        match value {
+            0 => Self::Off,
+            1 => Self::On,
+            2 => Self::Toggle,
+            _ => Self::Other(value),
+        }
+    }
+
+    pub fn to_raw(self) -> u32 {
+        match self {
+            Self::Off => 0,
+            Self::On => 1,
+            Self::Toggle => 2,
+            Self::Other(val) => val,
+        }
+    }
+}
+
+/// Commands for backlight behavior (`&bl`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BacklightCommand {
+    On,
+    Off,
+    Toggle,
+    Inc,
+    Dec,
+    Cycle,
+    Set(u8),
+    Other { command: u32, value: u32 },
+}
+
+impl BacklightCommand {
+    pub fn from_raw(command: u32, value: u32) -> Self {
+        match (command, value) {
+            (0, 0) => Self::On,
+            (1, 0) => Self::Off,
+            (2, 0) => Self::Toggle,
+            (3, 0) => Self::Inc,
+            (4, 0) => Self::Dec,
+            (5, 0) => Self::Cycle,
+            (6, val) => Self::Set(val as u8),
+            _ => Self::Other { command, value },
+        }
+    }
+
+    pub fn to_raw(self) -> (u32, u32) {
+        match self {
+            Self::On => (0, 0),
+            Self::Off => (1, 0),
+            Self::Toggle => (2, 0),
+            Self::Inc => (3, 0),
+            Self::Dec => (4, 0),
+            Self::Cycle => (5, 0),
+            Self::Set(val) => (6, val as u32),
+            Self::Other { command, value } => (command, value),
+        }
+    }
+}
+
+/// Commands for RGB underglow behavior (`&rgb_ug`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnderglowCommand {
+    Toggle,
+    On,
+    Off,
+    HueInc,
+    HueDec,
+    SatInc,
+    SatDec,
+    BrightInc,
+    BrightDec,
+    SpeedInc,
+    SpeedDec,
+    EffectInc,
+    EffectDec,
+    EffectSet,
+    Color,
+    Other { command: u32, value: u32 },
+}
+
+impl UnderglowCommand {
+    pub fn from_raw(command: u32, value: u32) -> Self {
+        match (command, value) {
+            (0, 0) => Self::Toggle,
+            (1, 0) => Self::On,
+            (2, 0) => Self::Off,
+            (3, 0) => Self::HueInc,
+            (4, 0) => Self::HueDec,
+            (5, 0) => Self::SatInc,
+            (6, 0) => Self::SatDec,
+            (7, 0) => Self::BrightInc,
+            (8, 0) => Self::BrightDec,
+            (9, 0) => Self::SpeedInc,
+            (10, 0) => Self::SpeedDec,
+            (11, 0) => Self::EffectInc,
+            (12, 0) => Self::EffectDec,
+            (13, 0) => Self::EffectSet,
+            (14, 0) => Self::Color,
+            _ => Self::Other { command, value },
+        }
+    }
+
+    pub fn to_raw(self) -> (u32, u32) {
+        match self {
+            Self::Toggle => (0, 0),
+            Self::On => (1, 0),
+            Self::Off => (2, 0),
+            Self::HueInc => (3, 0),
+            Self::HueDec => (4, 0),
+            Self::SatInc => (5, 0),
+            Self::SatDec => (6, 0),
+            Self::BrightInc => (7, 0),
+            Self::BrightDec => (8, 0),
+            Self::SpeedInc => (9, 0),
+            Self::SpeedDec => (10, 0),
+            Self::EffectInc => (11, 0),
+            Self::EffectDec => (12, 0),
+            Self::EffectSet => (13, 0),
+            Self::Color => (14, 0),
+            Self::Other { command, value } => (command, value),
+        }
+    }
+}
+
+/// Mouse buttons for mouse key press behavior (`&mkp`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Button4,
+    Button5,
+    Other(u32),
+}
+
+impl MouseButton {
+    pub fn from_raw(value: u32) -> Self {
+        match value {
+            1 => Self::Left,
+            2 => Self::Right,
+            4 => Self::Middle,
+            8 => Self::Button4,
+            16 => Self::Button5,
+            _ => Self::Other(value),
+        }
+    }
+
+    pub fn to_raw(self) -> u32 {
+        match self {
+            Self::Left => 1,
+            Self::Right => 2,
+            Self::Middle => 4,
+            Self::Button4 => 8,
+            Self::Button5 => 16,
+            Self::Other(val) => val,
+        }
+    }
+}
+
+/// Decode a ZMK pointing value: `(x << 16) | (y & 0xFFFF)` (dt-bindings/zmk/pointing.h).
+pub fn decode_pointing_coords(value: u32) -> (i16, i16) {
+    let x = ((value >> 16) & 0xFFFF) as i16;
+    let y = (value & 0xFFFF) as i16;
+    (x, y)
+}
+
+/// Encode `(x, y)` coordinate offsets into a ZMK pointing value.
+pub fn encode_pointing_coords(x: i16, y: i16) -> u32 {
+    (((x as u16) as u32) << 16) | ((y as u16) as u32)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BehaviorRole {
     KeyPress,
@@ -95,6 +347,129 @@ impl BehaviorRole {
             Self::None => "None",
         }
     }
+
+    /// Returns the standard set of candidate behavior variants supported by this role.
+    pub fn standard_candidates(self) -> Vec<Behavior> {
+        match self {
+            Self::Bluetooth => {
+                let mut list = vec![
+                    Behavior::Bluetooth(BluetoothCommand::Clear),
+                    Behavior::Bluetooth(BluetoothCommand::Next),
+                    Behavior::Bluetooth(BluetoothCommand::Prev),
+                ];
+                list.extend((0..=9).map(|i| Behavior::Bluetooth(BluetoothCommand::Select(i))));
+                list.push(Behavior::Bluetooth(BluetoothCommand::ClearAll));
+                list.extend((0..=9).map(|i| Behavior::Bluetooth(BluetoothCommand::Disconnect(i))));
+                list
+            }
+            Self::OutputSelection => vec![
+                Behavior::OutputSelection(OutputSelection::Toggle),
+                Behavior::OutputSelection(OutputSelection::Usb),
+                Behavior::OutputSelection(OutputSelection::Ble),
+                Behavior::OutputSelection(OutputSelection::None),
+            ],
+            Self::ExternalPower => vec![
+                Behavior::ExternalPower(ExternalPowerCommand::Off),
+                Behavior::ExternalPower(ExternalPowerCommand::On),
+                Behavior::ExternalPower(ExternalPowerCommand::Toggle),
+            ],
+            Self::Backlight => vec![
+                Behavior::Backlight(BacklightCommand::On),
+                Behavior::Backlight(BacklightCommand::Off),
+                Behavior::Backlight(BacklightCommand::Toggle),
+                Behavior::Backlight(BacklightCommand::Inc),
+                Behavior::Backlight(BacklightCommand::Dec),
+                Behavior::Backlight(BacklightCommand::Cycle),
+                Behavior::Backlight(BacklightCommand::Set(0)),
+            ],
+            Self::Underglow => vec![
+                Behavior::Underglow(UnderglowCommand::Toggle),
+                Behavior::Underglow(UnderglowCommand::On),
+                Behavior::Underglow(UnderglowCommand::Off),
+                Behavior::Underglow(UnderglowCommand::HueInc),
+                Behavior::Underglow(UnderglowCommand::HueDec),
+                Behavior::Underglow(UnderglowCommand::SatInc),
+                Behavior::Underglow(UnderglowCommand::SatDec),
+                Behavior::Underglow(UnderglowCommand::BrightInc),
+                Behavior::Underglow(UnderglowCommand::BrightDec),
+                Behavior::Underglow(UnderglowCommand::SpeedInc),
+                Behavior::Underglow(UnderglowCommand::SpeedDec),
+                Behavior::Underglow(UnderglowCommand::EffectInc),
+                Behavior::Underglow(UnderglowCommand::EffectDec),
+                Behavior::Underglow(UnderglowCommand::EffectSet),
+                Behavior::Underglow(UnderglowCommand::Color),
+            ],
+            Self::MouseKeyPress => vec![
+                Behavior::MouseKeyPress(MouseButton::Left),
+                Behavior::MouseKeyPress(MouseButton::Right),
+                Behavior::MouseKeyPress(MouseButton::Middle),
+                Behavior::MouseKeyPress(MouseButton::Button4),
+                Behavior::MouseKeyPress(MouseButton::Button5),
+            ],
+            Self::MouseMove => vec![
+                Behavior::MouseMove { x: 1, y: 0 },
+                Behavior::MouseMove { x: -1, y: 0 },
+                Behavior::MouseMove { x: 0, y: 1 },
+                Behavior::MouseMove { x: 0, y: -1 },
+            ],
+            Self::MouseScroll => vec![
+                Behavior::MouseScroll { x: 0, y: 1 },
+                Behavior::MouseScroll { x: 0, y: -1 },
+                Behavior::MouseScroll { x: 1, y: 0 },
+                Behavior::MouseScroll { x: -1, y: 0 },
+            ],
+            Self::CapsWord => vec![Behavior::CapsWord],
+            Self::KeyRepeat => vec![Behavior::KeyRepeat],
+            Self::Reset => vec![Behavior::Reset],
+            Self::Bootloader => vec![Behavior::Bootloader],
+            Self::SoftOff => vec![Behavior::SoftOff],
+            Self::StudioUnlock => vec![Behavior::StudioUnlock],
+            Self::GraveEscape => vec![Behavior::GraveEscape],
+            Self::Transparent => vec![Behavior::Transparent],
+            Self::None => vec![Behavior::None],
+            _ => Vec::new(),
+        }
+    }
+
+    /// Returns a sample Behavior instance for this behavior role.
+    pub fn sample_behavior(self) -> Behavior {
+        let sample_usage = HidUsage::from(crate::keycode::Keycode::A);
+        let sample_mod_usage = HidUsage::from(crate::keycode::Keycode::LEFT_SHIFT);
+        match self {
+            Self::KeyPress => Behavior::KeyPress(sample_usage),
+            Self::KeyToggle => Behavior::KeyToggle(sample_usage),
+            Self::StickyKey => Behavior::StickyKey(sample_usage),
+            Self::MomentaryLayer => Behavior::MomentaryLayer { layer_id: 0 },
+            Self::ToggleLayer => Behavior::ToggleLayer { layer_id: 0 },
+            Self::ToLayer => Behavior::ToLayer { layer_id: 0 },
+            Self::StickyLayer => Behavior::StickyLayer { layer_id: 0 },
+            Self::LayerTap => Behavior::LayerTap {
+                layer_id: 0,
+                tap: sample_usage,
+            },
+            Self::ModTap => Behavior::ModTap {
+                hold: sample_mod_usage,
+                tap: sample_usage,
+            },
+            Self::Transparent => Behavior::Transparent,
+            Self::None => Behavior::None,
+            Self::CapsWord => Behavior::CapsWord,
+            Self::KeyRepeat => Behavior::KeyRepeat,
+            Self::GraveEscape => Behavior::GraveEscape,
+            Self::StudioUnlock => Behavior::StudioUnlock,
+            Self::Reset => Behavior::Reset,
+            Self::Bootloader => Behavior::Bootloader,
+            Self::SoftOff => Behavior::SoftOff,
+            Self::Bluetooth => Behavior::Bluetooth(BluetoothCommand::Clear),
+            Self::ExternalPower => Behavior::ExternalPower(ExternalPowerCommand::Off),
+            Self::OutputSelection => Behavior::OutputSelection(OutputSelection::Toggle),
+            Self::Backlight => Behavior::Backlight(BacklightCommand::On),
+            Self::Underglow => Behavior::Underglow(UnderglowCommand::Toggle),
+            Self::MouseKeyPress => Behavior::MouseKeyPress(MouseButton::Left),
+            Self::MouseMove => Behavior::MouseMove { x: 0, y: 0 },
+            Self::MouseScroll => Behavior::MouseScroll { x: 0, y: 0 },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -165,32 +540,19 @@ pub enum Behavior {
     ToLayer {
         layer_id: u32,
     },
-    Bluetooth {
-        command: u32,
-        value: u32,
-    },
-    ExternalPower {
-        value: u32,
-    },
-    OutputSelection {
-        value: u32,
-    },
-    Backlight {
-        command: u32,
-        value: u32,
-    },
-    Underglow {
-        command: u32,
-        value: u32,
-    },
-    MouseKeyPress {
-        value: u32,
-    },
+    Bluetooth(BluetoothCommand),
+    ExternalPower(ExternalPowerCommand),
+    OutputSelection(OutputSelection),
+    Backlight(BacklightCommand),
+    Underglow(UnderglowCommand),
+    MouseKeyPress(MouseButton),
     MouseMove {
-        value: u32,
+        x: i16,
+        y: i16,
     },
     MouseScroll {
-        value: u32,
+        x: i16,
+        y: i16,
     },
     CapsWord,
     KeyRepeat,
@@ -239,12 +601,12 @@ impl Behavior {
             Self::MomentaryLayer { .. } => Some(BehaviorRole::MomentaryLayer),
             Self::ToggleLayer { .. } => Some(BehaviorRole::ToggleLayer),
             Self::ToLayer { .. } => Some(BehaviorRole::ToLayer),
-            Self::Bluetooth { .. } => Some(BehaviorRole::Bluetooth),
-            Self::ExternalPower { .. } => Some(BehaviorRole::ExternalPower),
-            Self::OutputSelection { .. } => Some(BehaviorRole::OutputSelection),
-            Self::Backlight { .. } => Some(BehaviorRole::Backlight),
-            Self::Underglow { .. } => Some(BehaviorRole::Underglow),
-            Self::MouseKeyPress { .. } => Some(BehaviorRole::MouseKeyPress),
+            Self::Bluetooth(_) => Some(BehaviorRole::Bluetooth),
+            Self::ExternalPower(_) => Some(BehaviorRole::ExternalPower),
+            Self::OutputSelection(_) => Some(BehaviorRole::OutputSelection),
+            Self::Backlight(_) => Some(BehaviorRole::Backlight),
+            Self::Underglow(_) => Some(BehaviorRole::Underglow),
+            Self::MouseKeyPress(_) => Some(BehaviorRole::MouseKeyPress),
             Self::MouseMove { .. } => Some(BehaviorRole::MouseMove),
             Self::MouseScroll { .. } => Some(BehaviorRole::MouseScroll),
             Self::CapsWord => Some(BehaviorRole::CapsWord),
@@ -272,15 +634,14 @@ impl Behavior {
             | Self::MomentaryLayer { layer_id }
             | Self::ToggleLayer { layer_id }
             | Self::ToLayer { layer_id } => (*layer_id, 0),
-            Self::Bluetooth { command, value } => (*command, *value),
-            Self::ExternalPower { value }
-            | Self::OutputSelection { value }
-            | Self::MouseKeyPress { value }
-            | Self::MouseMove { value }
-            | Self::MouseScroll { value } => (*value, 0),
-            Self::Backlight { command, value } | Self::Underglow { command, value } => {
-                (*command, *value)
-            }
+            Self::Bluetooth(cmd) => cmd.to_raw(),
+            Self::ExternalPower(cmd) => (cmd.to_raw(), 0),
+            Self::OutputSelection(out) => (out.to_raw(), 0),
+            Self::Backlight(cmd) => cmd.to_raw(),
+            Self::Underglow(cmd) => cmd.to_raw(),
+            Self::MouseKeyPress(btn) => (btn.to_raw(), 0),
+            Self::MouseMove { x, y } => (encode_pointing_coords(*x, *y), 0),
+            Self::MouseScroll { x, y } => (encode_pointing_coords(*x, *y), 0),
             Self::Custom { param1, param2, .. } => (param1.to_raw(), param2.to_raw()),
             Self::Unknown { param1, param2, .. } => (*param1, *param2),
             _ => (0, 0),
