@@ -1074,4 +1074,171 @@ mod tests {
         assert_eq!(BehaviorParam::Number(9).to_raw(), 9);
         assert_eq!(BehaviorParam::Unused.to_raw(), 0);
     }
+
+    #[test]
+    fn bluetooth_commands_round_trip_raw() {
+        let cmds = [
+            (BluetoothCommand::Clear, 0, 0),
+            (BluetoothCommand::Next, 1, 0),
+            (BluetoothCommand::Prev, 2, 0),
+            (BluetoothCommand::Select(2), 3, 2),
+            (BluetoothCommand::ClearAll, 4, 0),
+            (BluetoothCommand::Disconnect(3), 5, 3),
+            (
+                BluetoothCommand::Other {
+                    command: 99,
+                    value: 5,
+                },
+                99,
+                5,
+            ),
+        ];
+
+        for (cmd, exp_c, exp_v) in cmds {
+            assert_eq!(cmd.to_raw(), (exp_c, exp_v));
+            assert_eq!(BluetoothCommand::from_raw(exp_c, exp_v), cmd);
+        }
+    }
+
+    #[test]
+    fn output_selection_round_trip_raw() {
+        let cmds = [
+            (OutputSelection::Toggle, 0),
+            (OutputSelection::Usb, 1),
+            (OutputSelection::Ble, 2),
+            (OutputSelection::None, 3),
+            (OutputSelection::Other(42), 42),
+        ];
+
+        for (cmd, exp_v) in cmds {
+            assert_eq!(cmd.to_raw(), exp_v);
+            assert_eq!(OutputSelection::from_raw(exp_v), cmd);
+        }
+    }
+
+    #[test]
+    fn external_power_round_trip_raw() {
+        let cmds = [
+            (ExternalPowerCommand::Off, 0),
+            (ExternalPowerCommand::On, 1),
+            (ExternalPowerCommand::Toggle, 2),
+            (ExternalPowerCommand::Other(99), 99),
+        ];
+
+        for (cmd, exp_v) in cmds {
+            assert_eq!(cmd.to_raw(), exp_v);
+            assert_eq!(ExternalPowerCommand::from_raw(exp_v), cmd);
+        }
+    }
+
+    #[test]
+    fn backlight_commands_round_trip_raw() {
+        let cmds = [
+            (BacklightCommand::On, 0, 0),
+            (BacklightCommand::Off, 1, 0),
+            (BacklightCommand::Toggle, 2, 0),
+            (BacklightCommand::Inc, 3, 0),
+            (BacklightCommand::Dec, 4, 0),
+            (BacklightCommand::Cycle, 5, 0),
+            (BacklightCommand::Set(100), 6, 100),
+            (
+                BacklightCommand::Other {
+                    command: 7,
+                    value: 3,
+                },
+                7,
+                3,
+            ),
+        ];
+
+        for (cmd, exp_c, exp_v) in cmds {
+            assert_eq!(cmd.to_raw(), (exp_c, exp_v));
+            assert_eq!(BacklightCommand::from_raw(exp_c, exp_v), cmd);
+        }
+    }
+
+    #[test]
+    fn underglow_commands_round_trip_raw() {
+        let cmds = [
+            (UnderglowCommand::Toggle, 0, 0),
+            (UnderglowCommand::On, 1, 0),
+            (UnderglowCommand::Off, 2, 0),
+            (UnderglowCommand::HueInc, 3, 0),
+            (UnderglowCommand::HueDec, 4, 0),
+            (UnderglowCommand::SatInc, 5, 0),
+            (UnderglowCommand::SatDec, 6, 0),
+            (UnderglowCommand::BrightInc, 7, 0),
+            (UnderglowCommand::BrightDec, 8, 0),
+            (UnderglowCommand::SpeedInc, 9, 0),
+            (UnderglowCommand::SpeedDec, 10, 0),
+            (UnderglowCommand::EffectInc, 11, 0),
+            (UnderglowCommand::EffectDec, 12, 0),
+            (UnderglowCommand::EffectSet, 13, 0),
+            (UnderglowCommand::Color, 14, 0),
+            (
+                UnderglowCommand::Other {
+                    command: 20,
+                    value: 5,
+                },
+                20,
+                5,
+            ),
+        ];
+
+        for (cmd, exp_c, exp_v) in cmds {
+            assert_eq!(cmd.to_raw(), (exp_c, exp_v));
+            assert_eq!(UnderglowCommand::from_raw(exp_c, exp_v), cmd);
+        }
+    }
+
+    #[test]
+    fn mouse_buttons_round_trip_raw() {
+        let btns = [
+            (MouseButton::Left, 1),
+            (MouseButton::Right, 2),
+            (MouseButton::Middle, 4),
+            (MouseButton::Button4, 8),
+            (MouseButton::Button5, 16),
+            (MouseButton::Other(32), 32),
+        ];
+
+        for (btn, exp_v) in btns {
+            assert_eq!(btn.to_raw(), exp_v);
+            assert_eq!(MouseButton::from_raw(exp_v), btn);
+        }
+    }
+
+    #[test]
+    fn pointing_coords_round_trip() {
+        let coords = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1234, -5678)];
+        for (x, y) in coords {
+            let encoded = encode_pointing_coords(x, y);
+            assert_eq!(decode_pointing_coords(encoded), (x, y));
+        }
+    }
+
+    #[test]
+    fn standard_candidates_not_empty_for_command_roles() {
+        let roles = [
+            BehaviorRole::Bluetooth,
+            BehaviorRole::OutputSelection,
+            BehaviorRole::ExternalPower,
+            BehaviorRole::Backlight,
+            BehaviorRole::Underglow,
+            BehaviorRole::MouseKeyPress,
+            BehaviorRole::MouseMove,
+            BehaviorRole::MouseScroll,
+            BehaviorRole::CapsWord,
+            BehaviorRole::KeyRepeat,
+            BehaviorRole::Reset,
+            BehaviorRole::Bootloader,
+        ];
+        for role in roles {
+            let candidates = role.standard_candidates();
+            assert!(!candidates.is_empty(), "Role {:?} candidates empty", role);
+            for candidate in candidates {
+                assert_eq!(candidate.role(), Some(role));
+            }
+        }
+    }
 }

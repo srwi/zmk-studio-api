@@ -113,6 +113,36 @@ impl HidUsage {
         }
         labels
     }
+
+    /// Encodes an 8-bit modifier bitmask into a `HidUsage`.
+    ///
+    /// Single-modifier masks encode as a keyboard usage (`0xE0..=0xE7`).
+    /// Multi-modifier masks encode with usage ID 0 and the modifier byte set.
+    pub fn from_modifier_mask(mask: u8) -> Self {
+        if mask.count_ones() == 1 {
+            Self::from_parts(HID_USAGE_KEYBOARD, 0xE0 + mask.trailing_zeros() as u16, 0)
+        } else {
+            Self::from_parts(HID_USAGE_KEYBOARD, 0, mask)
+        }
+    }
+
+    /// Extracts the 8-bit modifier bitmask whether stored as a modifier usage (`0xE0..=0xE7`)
+    /// or in the modifier byte.
+    pub fn modifier_mask(self) -> u8 {
+        if self.modifiers != 0 {
+            return self.modifiers;
+        }
+        if self.page == HID_USAGE_KEYBOARD && (0xE0..=0xE7).contains(&self.id) {
+            1 << (self.id - 0xE0)
+        } else {
+            0
+        }
+    }
+
+    /// Returns `true` if this usage represents a modifier key or carries modifier flags.
+    pub fn is_modifier(self) -> bool {
+        self.modifier_mask() != 0
+    }
 }
 
 impl fmt::Display for HidUsage {
@@ -135,5 +165,62 @@ impl fmt::Display for HidUsage {
 impl From<Keycode> for HidUsage {
     fn from(code: Keycode) -> Self {
         Self::from_encoded(code as u32)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_modifier_round_trip_mask() {
+        let single_mods = [
+            (MOD_LCTL, 0xE0),
+            (MOD_LSFT, 0xE1),
+            (MOD_LALT, 0xE2),
+            (MOD_LGUI, 0xE3),
+            (MOD_RCTL, 0xE4),
+            (MOD_RSFT, 0xE5),
+            (MOD_RALT, 0xE6),
+            (MOD_RGUI, 0xE7),
+        ];
+
+        for (mask, expected_id) in single_mods {
+            let usage = HidUsage::from_modifier_mask(mask);
+            assert_eq!(usage.page(), HID_USAGE_KEYBOARD);
+            assert_eq!(usage.id(), expected_id);
+            assert_eq!(usage.modifiers(), 0);
+            assert_eq!(usage.modifier_mask(), mask);
+            assert!(usage.is_modifier());
+        }
+    }
+
+    #[test]
+    fn multi_modifier_round_trip_mask() {
+        let mask = MOD_LSFT | MOD_LCTL | MOD_LALT;
+        let usage = HidUsage::from_modifier_mask(mask);
+        assert_eq!(usage.page(), HID_USAGE_KEYBOARD);
+        assert_eq!(usage.id(), 0);
+        assert_eq!(usage.modifiers(), mask);
+        assert_eq!(usage.modifier_mask(), mask);
+        assert!(usage.is_modifier());
+    }
+
+    #[test]
+    fn zero_modifier_mask() {
+        let usage = HidUsage::from_modifier_mask(0);
+        assert_eq!(usage.modifier_mask(), 0);
+        assert!(!usage.is_modifier());
+    }
+
+    #[test]
+    fn regular_keycode_is_not_modifier() {
+        let usage = HidUsage::from(Keycode::A);
+        assert_eq!(usage.modifier_mask(), 0);
+        assert!(!usage.is_modifier());
+
+        let usage_with_mod = HidUsage::from_parts(HID_USAGE_KEYBOARD, 0x04, MOD_LSFT);
+        assert_eq!(usage_with_mod.modifier_mask(), MOD_LSFT);
+        assert!(usage_with_mod.is_modifier());
     }
 }
