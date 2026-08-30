@@ -681,6 +681,38 @@ impl Keycode {
     pub fn to_name(self) -> &'static str {
         <&'static str>::from(self)
     }
+
+    /// Returns the HID usage page for this keycode (`0x07` for Keyboard, `0x0C` for Consumer, etc.).
+    pub fn usage_page(self) -> u16 {
+        ((self.to_hid_usage() >> 16) & 0xFF) as u16
+    }
+
+    /// Returns the HID usage ID (lower 16 bits) for this keycode.
+    pub fn usage_id(self) -> u16 {
+        (self.to_hid_usage() & 0xFFFF) as u16
+    }
+
+    /// Returns all known keyboard-page (`0x07`) keycodes.
+    pub fn all_keyboard() -> &'static [Keycode] {
+        static KEYBOARD: std::sync::OnceLock<Vec<Keycode>> = std::sync::OnceLock::new();
+        KEYBOARD.get_or_init(|| {
+            use strum::IntoEnumIterator;
+            Keycode::iter()
+                .filter(|k| k.usage_page() == crate::hid_usage::HID_USAGE_KEYBOARD)
+                .collect()
+        })
+    }
+
+    /// Returns all known consumer-page (`0x0C`) keycodes.
+    pub fn all_consumer() -> &'static [Keycode] {
+        static CONSUMER: std::sync::OnceLock<Vec<Keycode>> = std::sync::OnceLock::new();
+        CONSUMER.get_or_init(|| {
+            use strum::IntoEnumIterator;
+            Keycode::iter()
+                .filter(|k| k.usage_page() == crate::hid_usage::HID_USAGE_CONSUMER)
+                .collect()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -736,5 +768,41 @@ mod tests {
             Keycode::from_name(Keycode::RIGHT_BRACE.to_name()),
             Some(Keycode::RIGHT_BRACE)
         );
+    }
+
+    #[test]
+    fn all_keyboard_and_consumer_partitioning() {
+        let keyboard = Keycode::all_keyboard();
+        let consumer = Keycode::all_consumer();
+
+        assert!(
+            !keyboard.is_empty(),
+            "keyboard keycodes should not be empty"
+        );
+        assert!(
+            !consumer.is_empty(),
+            "consumer keycodes should not be empty"
+        );
+
+        for &k in keyboard {
+            assert_eq!(
+                k.usage_page(),
+                crate::hid_usage::HID_USAGE_KEYBOARD,
+                "Keycode {:?} should be on keyboard page",
+                k
+            );
+        }
+
+        for &k in consumer {
+            assert_eq!(
+                k.usage_page(),
+                crate::hid_usage::HID_USAGE_CONSUMER,
+                "Keycode {:?} should be on consumer page",
+                k
+            );
+        }
+
+        assert!(keyboard.contains(&Keycode::A));
+        assert!(keyboard.contains(&Keycode::RETURN));
     }
 }
