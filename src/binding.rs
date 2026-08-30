@@ -648,6 +648,27 @@ impl Behavior {
         }
     }
 
+    /// Returns the target layer ID if this behavior switches or targets a layer.
+    pub fn layer_id(&self) -> Option<u32> {
+        match self {
+            Self::MomentaryLayer { layer_id }
+            | Self::ToggleLayer { layer_id }
+            | Self::ToLayer { layer_id }
+            | Self::StickyLayer { layer_id }
+            | Self::LayerTap { layer_id, .. } => Some(*layer_id),
+            Self::Custom { param1, param2, .. } => match (param1, param2) {
+                (BehaviorParam::LayerId(id), _) | (_, BehaviorParam::LayerId(id)) => Some(*id),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if this behavior targets or activates a layer.
+    pub fn is_layer_behavior(&self) -> bool {
+        self.layer_id().is_some()
+    }
+
     /// Returns whether this behavior's parameters match any set in `metadata`.
     pub fn matches_metadata(&self, metadata: &[BehaviorBindingParametersSet]) -> bool {
         let (p1, p2) = self.raw_params();
@@ -1240,5 +1261,44 @@ mod tests {
                 assert_eq!(candidate.role(), Some(role));
             }
         }
+    }
+
+    #[test]
+    fn behavior_layer_id_and_is_layer_behavior() {
+        let momentary = Behavior::MomentaryLayer { layer_id: 2 };
+        assert_eq!(momentary.layer_id(), Some(2));
+        assert!(momentary.is_layer_behavior());
+
+        let toggle = Behavior::ToggleLayer { layer_id: 3 };
+        assert_eq!(toggle.layer_id(), Some(3));
+        assert!(toggle.is_layer_behavior());
+
+        let to = Behavior::ToLayer { layer_id: 0 };
+        assert_eq!(to.layer_id(), Some(0));
+        assert!(to.is_layer_behavior());
+
+        let sticky = Behavior::StickyLayer { layer_id: 4 };
+        assert_eq!(sticky.layer_id(), Some(4));
+        assert!(sticky.is_layer_behavior());
+
+        let layer_tap = Behavior::LayerTap {
+            layer_id: 1,
+            tap: HidUsage::from(Keycode::SPACE),
+        };
+        assert_eq!(layer_tap.layer_id(), Some(1));
+        assert!(layer_tap.is_layer_behavior());
+
+        let key_press = Behavior::KeyPress(HidUsage::from(Keycode::A));
+        assert_eq!(key_press.layer_id(), None);
+        assert!(!key_press.is_layer_behavior());
+
+        let custom_with_layer = Behavior::Custom {
+            behavior_id: 10,
+            display_name: "custom_layer".to_string(),
+            param1: BehaviorParam::LayerId(5),
+            param2: BehaviorParam::Unused,
+        };
+        assert_eq!(custom_with_layer.layer_id(), Some(5));
+        assert!(custom_with_layer.is_layer_behavior());
     }
 }
