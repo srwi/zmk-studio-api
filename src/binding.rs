@@ -259,6 +259,53 @@ impl Behavior {
             Self::Custom { .. } | Self::Unknown { .. } => None,
         }
     }
+
+    /// Returns the raw `(param1, param2)` encoding for this behavior binding.
+    pub fn raw_params(&self) -> (u32, u32) {
+        match self {
+            Self::KeyPress(key) | Self::KeyToggle(key) | Self::StickyKey(key) => {
+                (key.to_hid_usage(), 0)
+            }
+            Self::LayerTap { layer_id, tap } => (*layer_id, tap.to_hid_usage()),
+            Self::ModTap { hold, tap } => (hold.to_hid_usage(), tap.to_hid_usage()),
+            Self::StickyLayer { layer_id }
+            | Self::MomentaryLayer { layer_id }
+            | Self::ToggleLayer { layer_id }
+            | Self::ToLayer { layer_id } => (*layer_id, 0),
+            Self::Bluetooth { command, value } => (*command, *value),
+            Self::ExternalPower { value }
+            | Self::OutputSelection { value }
+            | Self::MouseKeyPress { value }
+            | Self::MouseMove { value }
+            | Self::MouseScroll { value } => (*value, 0),
+            Self::Backlight { command, value } | Self::Underglow { command, value } => {
+                (*command, *value)
+            }
+            Self::Custom { param1, param2, .. } => (param1.to_raw(), param2.to_raw()),
+            Self::Unknown { param1, param2, .. } => (*param1, *param2),
+            _ => (0, 0),
+        }
+    }
+
+    /// Returns whether this behavior's parameters match any set in `metadata`.
+    pub fn matches_metadata(&self, metadata: &[BehaviorBindingParametersSet]) -> bool {
+        let (p1, p2) = self.raw_params();
+        params_match_metadata(metadata, p1, p2)
+    }
+}
+
+/// Returns whether the parameter pair `(param1, param2)` matches any set in `metadata`.
+pub fn params_match_metadata(
+    metadata: &[BehaviorBindingParametersSet],
+    param1: u32,
+    param2: u32,
+) -> bool {
+    if metadata.is_empty() {
+        return param1 == 0 && param2 == 0;
+    }
+    metadata
+        .iter()
+        .any(|set| accepts(&set.param1, param1) && accepts(&set.param2, param2))
 }
 
 /// Types both parameters of a binding against the behavior's metadata.

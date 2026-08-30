@@ -23,12 +23,14 @@ pub mod transport;
 
 /// Typed key binding value used by [`StudioClient::get_key_at`] and [`StudioClient::set_key_at`].
 pub use binding::Behavior;
-/// Behavior role describing the built-in function of a behavior.
-pub use binding::BehaviorRole;
 /// A typed parameter of a [`Behavior::Custom`] binding.
 pub use binding::BehaviorParam;
+/// Behavior role describing the built-in function of a behavior.
+pub use binding::BehaviorRole;
 /// A keymap layer with metadata and resolved bindings, returned by [`StudioClient::resolve_keymap`].
 pub use binding::ResolvedLayer;
+/// Checks whether a parameter pair matches a behavior's metadata.
+pub use binding::params_match_metadata;
 /// Errors returned by high-level client operations.
 pub use client::{ClientError, StudioClient};
 /// Decoded ZMK HID usage values used in typed behavior APIs.
@@ -38,3 +40,5 @@ pub use hid_usage::{
 };
 /// ZMK keycode enum used in typed behavior APIs.
 pub use keycode::Keycode;
+/// Behavior metadata parameter set describing valid ranges and usages.
+pub use proto::zmk::behaviors::BehaviorBindingParametersSet;

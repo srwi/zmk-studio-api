@@ -131,3 +131,9 @@ impl fmt::Display for HidUsage {
         )
     }
 }
+
+impl From<Keycode> for HidUsage {
+    fn from(code: Keycode) -> Self {
+        Self::from_encoded(code as u32)
+    }
+}

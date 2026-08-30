@@ -147,6 +147,8 @@ pub struct StudioClient<T> {
     notifications: VecDeque<studio::Notification>,
     behavior_role_by_id: HashMap<u32, BehaviorRole>,
     behavior_id_by_role: HashMap<BehaviorRole, u32>,
+    behavior_metadata_by_role:
+        HashMap<BehaviorRole, Vec<zmk::behaviors::BehaviorBindingParametersSet>>,
     behavior_details_fetched: HashSet<u32>,
     /// Details of behaviors with no built-in role, kept so their bindings can be
     /// resolved into [`Behavior::Custom`] without another round trip.
@@ -170,6 +172,7 @@ impl<T: Read + Write> StudioClient<T> {
             notifications: VecDeque::new(),
             behavior_role_by_id: HashMap::new(),
             behavior_id_by_role: HashMap::new(),
+            behavior_metadata_by_role: HashMap::new(),
             behavior_details_fetched: HashSet::new(),
             custom_behavior_details: HashMap::new(),
             behavior_catalog_complete: false,
@@ -928,12 +931,32 @@ impl<T: Read + Write> StudioClient<T> {
     /// Returns whether the connected device supports the given behavior.
     ///
     /// Custom and unknown behaviors return `true`. Standard behaviors check
-    /// against the device's behavior catalog.
+    /// whether the role is available on the device and whether its parameters
+    /// match the device's published parameter metadata.
     pub fn supports_behavior(&mut self, behavior: &Behavior) -> Result<bool, ClientError> {
-        match behavior.role() {
-            Some(role) => self.supports_role(role),
-            None => Ok(true),
+        self.ensure_behavior_catalog()?;
+        let Some(role) = behavior.role() else {
+            return Ok(true);
+        };
+        if !self.behavior_id_by_role.contains_key(&role) {
+            return Ok(false);
         }
+        if let Some(metadata) = self.behavior_metadata_by_role.get(&role) {
+            Ok(behavior.matches_metadata(metadata))
+        } else {
+            Ok(true)
+        }
+    }
+
+    /// Returns the metadata parameter sets for all supported behavior roles on the connected device.
+    ///
+    /// Fetches and caches the full behavior catalog if not already loaded.
+    pub fn behavior_metadata(
+        &mut self,
+    ) -> Result<HashMap<BehaviorRole, Vec<zmk::behaviors::BehaviorBindingParametersSet>>, ClientError>
+    {
+        self.ensure_behavior_catalog()?;
+        Ok(self.behavior_metadata_by_role.clone())
     }
 
     /// Fetches behavior details only for behaviors referenced by `bindings`
@@ -968,6 +991,9 @@ impl<T: Read + Write> StudioClient<T> {
             Some(role) => {
                 self.behavior_role_by_id.insert(id, role);
                 self.behavior_id_by_role.entry(role).or_insert(id);
+                self.behavior_metadata_by_role
+                    .entry(role)
+                    .or_insert(details.metadata);
             }
             // A behavior from the user's keymap: keep its name and parameter
             // metadata so its bindings resolve into `Behavior::Custom`.
