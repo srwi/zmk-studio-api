@@ -8,14 +8,14 @@
 //!
 //! [`proto`] exposes raw generated protobuf types for advanced use cases.
 
-mod binding;
+pub mod binding;
 mod client;
-mod framing;
+pub mod framing;
 mod hid_usage;
 mod keycode;
 /// Raw generated protobuf types used by the RPC protocol.
 pub mod proto;
-mod protocol;
+pub mod protocol;
 #[cfg(feature = "python")]
 mod python;
 /// Transport adapters for connecting to a ZMK Studio-capable device.
@@ -47,6 +47,10 @@ pub use binding::decode_pointing_coords;
 pub use binding::encode_pointing_coords;
 /// Checks whether a parameter pair matches a behavior's metadata.
 pub use binding::params_match_metadata;
+/// Role lookup from behavior display name.
+pub use binding::role_from_display_name;
+/// Types parameters against behavior metadata.
+pub use binding::typed_params;
 /// Errors returned by high-level client operations.
 pub use client::{ClientError, StudioClient};
 /// Decoded ZMK HID usage values used in typed behavior APIs.

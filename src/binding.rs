@@ -348,6 +348,44 @@ impl BehaviorRole {
         }
     }
 
+    /// The ZMK `display-name` string (or devicetree node name for behaviors
+    /// that use `DEVICE_DT_NAME`) for this role.
+    ///
+    /// This is the canonical string that [`role_from_display_name`] matches on,
+    /// so `role_from_display_name(role.display_name()) == Some(role)` always
+    /// holds for every variant.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::KeyPress => "key press",
+            Self::KeyToggle => "key toggle",
+            Self::LayerTap => "layer-tap",
+            Self::ModTap => "mod-tap",
+            Self::StickyKey => "sticky key",
+            Self::StickyLayer => "sticky layer",
+            Self::MomentaryLayer => "momentary layer",
+            Self::ToggleLayer => "toggle layer",
+            Self::ToLayer => "to layer",
+            Self::Bluetooth => "bluetooth",
+            Self::ExternalPower => "external power",
+            Self::OutputSelection => "output selection",
+            Self::Backlight => "backlight",
+            Self::Underglow => "underglow",
+            Self::MouseKeyPress => "mouse key press",
+            // These three use DEVICE_DT_NAME(node_id) rather than display-name
+            Self::MouseMove => "mouse_move",
+            Self::MouseScroll => "mouse_scroll",
+            Self::SoftOff => "z_so_off",
+            Self::CapsWord => "caps word",
+            Self::KeyRepeat => "key repeat",
+            Self::Reset => "reset",
+            Self::Bootloader => "bootloader",
+            Self::StudioUnlock => "studio unlock",
+            Self::GraveEscape => "grave/escape",
+            Self::Transparent => "transparent",
+            Self::None => "none",
+        }
+    }
+
     /// Returns the standard set of candidate behavior variants supported by this role.
     pub fn standard_candidates(self) -> Vec<Behavior> {
         match self {
@@ -699,7 +737,7 @@ pub fn params_match_metadata(
 ///
 /// Mirrors the firmware's own reading of that metadata — see
 /// `zmk_behavior_check_params_match_metadata` in `app/src/behavior.c`.
-pub(crate) fn typed_params(
+pub fn typed_params(
     metadata: &[BehaviorBindingParametersSet],
     param1: u32,
     param2: u32,
@@ -849,6 +887,18 @@ mod tests {
     use crate::proto::zmk::behaviors::{
         BehaviorParameterHidUsage, BehaviorParameterLayerId, BehaviorParameterValueDescriptionRange,
     };
+
+    #[test]
+    fn display_name_round_trips_through_role_from_display_name() {
+        for role in BehaviorRole::ALL {
+            assert_eq!(
+                role_from_display_name(role.display_name()),
+                Some(role),
+                "round-trip failed for {role:?} (display_name={:?})",
+                role.display_name(),
+            );
+        }
+    }
 
     fn described(value_type: ValueType) -> BehaviorParameterValueDescription {
         BehaviorParameterValueDescription {
