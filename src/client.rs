@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Read, Write};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use crate::binding::{
     BacklightCommand, Behavior, BehaviorRole, BluetoothCommand, ExternalPowerCommand, MouseButton,
@@ -130,7 +131,7 @@ const CALL_SEND_ATTEMPTS: u32 = 3;
 /// (whose responses may still sit in the device's transmit buffer) will not
 /// collide with ours.
 fn seed_request_id() -> u32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use web_time::{SystemTime, UNIX_EPOCH};
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
